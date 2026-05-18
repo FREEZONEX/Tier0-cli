@@ -4,28 +4,27 @@ Tier0 平台命令行工具。
 
 ## 安装
 
-### 方式一：下载 Release 包（推荐）
+### 方式一：一键脚本（推荐）
 
-从 [GitHub Releases](https://github.com/FREEZONEX/Tier0-cli/releases) 下载对应平台的预编译包：
+**macOS / Linux：**
 
 ```bash
-# Linux x86_64
-curl -LO https://github.com/FREEZONEX/Tier0-cli/releases/latest/download/tier0-cli-Linux-x86_64.tar.gz
-tar -xzf tier0-cli-Linux-x86_64.tar.gz
-sudo mv linux-amd64/tier0 /usr/local/bin/
-
-# macOS Apple Silicon
-curl -LO https://github.com/FREEZONEX/Tier0-cli/releases/latest/download/tier0-cli-macOS-arm64.tar.gz
-tar -xzf tier0-cli-macOS-arm64.tar.gz
-sudo mv darwin-arm64/tier0 /usr/local/bin/
-
-# Windows (PowerShell)
-# 下载 tier0-cli-Windows-x86_64.zip 并解压，将 tier0.exe 添加到 PATH
+curl -sL https://raw.githubusercontent.com/FREEZONEX/Tier0-cli/main/install.sh | bash
 ```
 
-Release 包已包含 skills 文档，开箱即用。
+**Windows (PowerShell)：**
 
-### 方式二：go install（仅二进制，不含 skills）
+```powershell
+Invoke-RestMethod -Uri https://raw.githubusercontent.com/FREEZONEX/Tier0-cli/main/install.ps1 | Invoke-Expression
+```
+
+脚本自动检测平台架构，下载对应 Release 包，安装到系统 PATH 中。
+
+### 方式二：手动下载
+
+从 [GitHub Releases](https://github.com/FREEZONEX/Tier0-cli/releases) 下载对应平台的预编译包，解压后将二进制放到 PATH 中。
+
+### 方式三：go install（仅二进制，不含 skills）
 
 ```bash
 go install github.com/FREEZONEX/Tier0-cli@latest
