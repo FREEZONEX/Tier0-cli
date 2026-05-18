@@ -95,16 +95,24 @@ tier0 login
 
 > **优先级**：`--base-url` 参数 > 环境变量 `TIER0_BASE_URL` > 配置文件 > 默认地址
 
+## 版本历史
+
+| 版本 | 日期 | 说明 |
+|------|------|------|
+| [v0.2.1](https://github.com/FREEZONEX/Tier0-cli/releases/tag/v0.2.1) | 2026-05-18 | 新增 `config --base-url` 设置私有化地址；config 支持读取 `TIER0_BASE_URL` 环境变量 |
+| [v0.2.0](https://github.com/FREEZONEX/Tier0-cli/releases/tag/v0.2.0) | 2026-05-18 | 新增 `upgrade`、`skills` 子命令；Release 包预装 skills 文档 |
+| [v0.1.0](https://github.com/FREEZONEX/Tier0-cli/releases/tag/v0.1.0) | 2026-05-17 | 初始版本：Device Flow 认证、UNS API 调用、config 管理 |
+
 ## 发布流程
 
 ### 构建 Release 包
 
 ```bash
 # 构建所有平台并打包（输出到 dist/release-vX.X.X/packages/）
-bash scripts/release.sh v0.2.0
+bash scripts/release.sh v0.2.1
 
 # 单独打包 skills
-bash scripts/package-skill.sh ./dist/skills --version v0.2.0
+bash scripts/package-skill.sh ./dist/skills --version v0.2.1
 ```
 
 ### 发布到 GitHub
@@ -112,9 +120,9 @@ bash scripts/package-skill.sh ./dist/skills --version v0.2.0
 ```bash
 # 方式 1：脚本自动发布（需设置 GITHUB_TOKEN）
 export GITHUB_TOKEN=ghp_xxxxxxxx
-bash scripts/release.sh v0.2.0
+bash scripts/release.sh v0.2.1
 
 # 方式 2：使用 gh CLI
-cd dist/release-v0.2.0/packages
-gh release create v0.2.0 --repo FREEZONEX/Tier0-cli --title "tier0-cli v0.2.0" --notes "..." *
+cd dist/release-v0.2.1/packages
+gh release create v0.2.1 --repo FREEZONEX/Tier0-cli --title "tier0-cli v0.2.1" --notes "..." *
 ```
