@@ -74,6 +74,8 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  tier0 login")
 	fmt.Fprintln(w, "  tier0 login --no-wait")
 	fmt.Fprintln(w, "  tier0 api /openapi/v1/uns/read --body '{\"topics\":[\"demo\"]}'")
+	fmt.Fprintln(w, "  tier0 api /openapi/v1/uns/write --body-file body.json")
+	fmt.Fprintln(w, "  tier0 api /openapi/v1/uns/browse --body '{\"path\":\"/\"}' --debug")
 }
 
 func runLogin(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -177,13 +179,15 @@ func runLoginPoll(ctx context.Context, baseURL, setupCode string, jsonMode bool,
 
 func runAPI(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "用法: tier0 api <endpoint> [--body '<json>'] [--method GET|POST]")
+		fmt.Fprintln(stderr, "用法: tier0 api <endpoint> [--body '<json>'] [--body-file FILE] [--method GET|POST] [--debug]")
 		return fmt.Errorf("missing endpoint")
 	}
 
 	endpoint := args[0]
 	var body string
+	var bodyFile string
 	var method string
+	var debug bool
 
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
@@ -192,12 +196,27 @@ func runAPI(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 				body = args[i+1]
 				i++
 			}
+		case "--body-file":
+			if i+1 < len(args) {
+				bodyFile = args[i+1]
+				i++
+			}
 		case "--method":
 			if i+1 < len(args) {
 				method = args[i+1]
 				i++
 			}
+		case "--debug":
+			debug = true
 		}
+	}
+
+	if bodyFile != "" {
+		raw, err := os.ReadFile(bodyFile)
+		if err != nil {
+			return fmt.Errorf("读取 body 文件失败: %w", err)
+		}
+		body = string(raw)
 	}
 
 	profile, err := config.LoadProfile()
@@ -210,7 +229,7 @@ func runAPI(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	}
 
 	c := client.New(profile.BaseURL, profile.APIKey)
-	resp, err := c.DoAPI(ctx, endpoint, method, body)
+	resp, err := c.DoAPI(ctx, endpoint, method, body, debug)
 	if err != nil {
 		return fmt.Errorf("API 调用失败: %w", err)
 	}
