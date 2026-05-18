@@ -224,9 +224,10 @@ func runConfig(ctx context.Context, args []string, stdout, stderr io.Writer) err
 		return fmt.Errorf("加载配置失败: %w", err)
 	}
 
-	baseURL := profile.BaseURL
-	if baseURL == "" {
-		baseURL = "https://tier0.dev"
+	// 优先使用环境变量，其次配置文件，最后默认值
+	baseURL, _ := resolveBaseURL("")
+	if profile.BaseURL != "" {
+		baseURL = profile.BaseURL
 	}
 	fmt.Fprintf(stdout, "BaseURL: %s\n", baseURL)
 	if profile.APIKey != "" {
