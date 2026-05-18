@@ -45,7 +45,7 @@ func (c *Client) DoAPI(ctx context.Context, endpoint, method, body string) (stri
 
 	req.Header.Set("Content-Type", "application/json")
 	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+		req.Header.Set("x-api-key", c.apiKey)
 	}
 
 	resp, err := c.client.Do(req)

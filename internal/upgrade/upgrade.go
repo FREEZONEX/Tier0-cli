@@ -349,11 +349,17 @@ func findBinary(dir string) (string, error) {
 func replaceBinary(newPath, oldPath string) error {
 	if runtime.GOOS == "windows" {
 		oldBak := oldPath + ".old"
-		os.Rename(oldPath, oldBak)
-		if err := os.Rename(newPath, oldPath); err != nil {
-			os.Rename(oldBak, oldPath)
-			return err
+		// 清理可能存在的旧备份，否则 rename 会失败
+		os.Remove(oldBak)
+		if err := os.Rename(oldPath, oldBak); err != nil {
+			return fmt.Errorf("备份旧版本失败: %w", err)
 		}
+		if err := os.Rename(newPath, oldPath); err != nil {
+			// 回滚
+			os.Rename(oldBak, oldPath)
+			return fmt.Errorf("替换新版本失败: %w", err)
+		}
+		// Windows 下正在运行的旧文件可能无法立即删除，忽略该错误
 		os.Remove(oldBak)
 		return nil
 	}
