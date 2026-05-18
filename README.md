@@ -98,6 +98,7 @@ tier0 login
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| [v0.2.3](https://github.com/FREEZONEX/Tier0-cli/releases/tag/v0.2.3) | 2026-05-18 | 新增跨平台一键安装脚本（install.sh / install.ps1），支持 macOS/Linux/Windows 自动安装 |
 | [v0.2.2](https://github.com/FREEZONEX/Tier0-cli/releases/tag/v0.2.2) | 2026-05-18 | 修复 `login` 读取配置文件中的 baseURL；Skill 文档明确 config 必须在 login 之前 |
 | [v0.2.1](https://github.com/FREEZONEX/Tier0-cli/releases/tag/v0.2.1) | 2026-05-18 | 新增 `config --base-url` 设置私有化地址；config 支持读取 `TIER0_BASE_URL` 环境变量 |
 | [v0.2.0](https://github.com/FREEZONEX/Tier0-cli/releases/tag/v0.2.0) | 2026-05-18 | 新增 `upgrade`、`skills` 子命令；Release 包预装 skills 文档 |
