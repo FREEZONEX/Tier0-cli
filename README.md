@@ -80,6 +80,21 @@ tier0 config
 5. CLI 轮询获取 API Key
 6. 保存到 `~/.tier0/config.json`
 
+## 配置
+
+```bash
+# 查看当前配置
+tier0 config
+
+# 设置私有化平台地址（写入配置文件，持久生效）
+tier0 config --base-url https://tier0-eks-frontend.tier0.dev
+
+# 登录时会自动使用配置文件中的地址
+tier0 login
+```
+
+> **优先级**：`--base-url` 参数 > 环境变量 `TIER0_BASE_URL` > 配置文件 > 默认地址
+
 ## 发布流程
 
 ### 构建 Release 包

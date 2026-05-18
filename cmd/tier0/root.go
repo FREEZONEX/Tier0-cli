@@ -70,6 +70,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  TIER0_API_KEY     API Key")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "示例:")
+	fmt.Fprintln(w, "  tier0 config --base-url https://tier0-eks-frontend.tier0.dev")
 	fmt.Fprintln(w, "  tier0 login")
 	fmt.Fprintln(w, "  tier0 login --no-wait")
 	fmt.Fprintln(w, "  tier0 api /openapi/v1/uns/read --body '{\"topics\":[\"demo\"]}'")
@@ -219,6 +220,29 @@ func runAPI(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 }
 
 func runConfig(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	var setBaseURL string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--base-url":
+			if i+1 < len(args) {
+				setBaseURL = strings.TrimRight(args[i+1], "/")
+				i++
+			}
+		}
+	}
+
+	// 设置模式
+	if setBaseURL != "" {
+		profile, _ := config.LoadProfile()
+		profile.BaseURL = setBaseURL
+		if err := config.SaveProfile(profile); err != nil {
+			return fmt.Errorf("保存配置失败: %w", err)
+		}
+		fmt.Fprintf(stdout, "✓ BaseURL 已设置为: %s\n", setBaseURL)
+		return nil
+	}
+
+	// 查看模式
 	profile, err := config.LoadProfile()
 	if err != nil {
 		return fmt.Errorf("加载配置失败: %w", err)
