@@ -86,10 +86,11 @@ func PollSetupCheck(ctx context.Context, baseURL, setupCode string, onPoll func(
 			Code int    `json:"code"`
 			Msg  string `json:"msg"`
 			Data struct {
-				Status      string `json:"status"`
-				APIKey      string `json:"apiKey"`
-				WorkspaceID string `json:"workspaceID"`
+				Status        string `json:"status"`
+				APIKey        string `json:"apiKey"`
+				WorkspaceID   int64  `json:"workspaceID"`
 				WorkspaceName string `json:"workspaceName"`
+				ExpiresAt     int64  `json:"expiresAt"`
 			} `json:"data"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
