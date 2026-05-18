@@ -10,6 +10,7 @@ import (
 	"github.com/FREEZONEX/Tier0-cli/internal/auth"
 	"github.com/FREEZONEX/Tier0-cli/internal/client"
 	"github.com/FREEZONEX/Tier0-cli/internal/config"
+	"github.com/FREEZONEX/Tier0-cli/internal/version"
 )
 
 // Execute 执行根命令
@@ -32,8 +33,12 @@ func Execute() error {
 		return runConfig(ctx, args[1:], os.Stdout, os.Stderr)
 	case "generate-skills":
 		return runGenerateSkills(ctx, args[1:], os.Stdout, os.Stderr)
+	case "skills":
+		return runSkills(ctx, args[1:], os.Stdout, os.Stderr)
+	case "upgrade":
+		return runUpgrade(ctx, args[1:], os.Stdout, os.Stderr)
 	case "--version", "-v", "version":
-		fmt.Fprintln(os.Stdout, "tier0 version 0.1.0")
+		fmt.Fprintf(os.Stdout, "tier0 version %s\n", version.BuildVersion)
 		return nil
 	case "--help", "-h", "help":
 		printUsage(os.Stdout)
@@ -54,6 +59,8 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  login             Device Flow 登录授权")
 	fmt.Fprintln(w, "  api <endpoint>    调用 API 接口")
 	fmt.Fprintln(w, "  config            查看/管理配置")
+	fmt.Fprintln(w, "  skills            管理 Skills（list/update/version）")
+	fmt.Fprintln(w, "  upgrade           升级 CLI 到最新版本")
 	fmt.Fprintln(w, "  generate-skills   生成 Skills 文档")
 	fmt.Fprintln(w, "  version           显示版本")
 	fmt.Fprintln(w, "  help              显示帮助")

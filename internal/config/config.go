@@ -27,14 +27,23 @@ func configFile() string {
 	return filepath.Join(configDir(), "config.json")
 }
 
-// SaveProfile 保存配置到文件
+// SaveProfile 保存配置到文件（逐字段 merge，避免覆盖其他字段）
 func SaveProfile(profile Profile) error {
 	dir := configDir()
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("创建配置目录失败: %w", err)
 	}
 
-	data, err := json.MarshalIndent(profile, "", "  ")
+	// 先读取现有配置，然后逐字段 merge
+	existing, _ := LoadProfile()
+	if profile.BaseURL != "" {
+		existing.BaseURL = profile.BaseURL
+	}
+	if profile.APIKey != "" {
+		existing.APIKey = profile.APIKey
+	}
+
+	data, err := json.MarshalIndent(existing, "", "  ")
 	if err != nil {
 		return fmt.Errorf("序列化配置失败: %w", err)
 	}
