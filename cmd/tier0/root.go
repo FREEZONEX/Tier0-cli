@@ -274,6 +274,11 @@ func resolveBaseURL(baseURLArg string) (string, error) {
 	if envURL := os.Getenv("TIER0_BASE_URL"); envURL != "" {
 		return strings.TrimRight(envURL, "/"), nil
 	}
+	// 最后读取配置文件中的 baseURL
+	profile, _ := config.LoadProfile()
+	if profile.BaseURL != "" {
+		return strings.TrimRight(profile.BaseURL, "/"), nil
+	}
 	return "https://tier0.dev", nil
 }
 
