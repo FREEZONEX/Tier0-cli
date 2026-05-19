@@ -32,6 +32,33 @@ function binaryName() {
   return process.platform === 'win32' ? 'tier0.exe' : 'tier0';
 }
 
+function findSkillDir(dir) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === 'skill' && fs.existsSync(path.join(fullPath, 'SKILL.md'))) {
+        return fullPath;
+      }
+      const found = findSkillDir(fullPath);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function copyDirSync(src, dst) {
+  fs.mkdirSync(dst, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const srcPath = path.join(src, entry.name);
+    const dstPath = path.join(dst, entry.name);
+    if (entry.isDirectory()) {
+      copyDirSync(srcPath, dstPath);
+    } else {
+      fs.copyFileSync(srcPath, dstPath);
+    }
+  }
+}
+
 function getLatestVersion() {
   return new Promise((resolve, reject) => {
     const url = `https://api.github.com/repos/${REPO}/releases/latest`;
@@ -159,6 +186,16 @@ async function install() {
       fs.chmodSync(binPath, 0o755);
     }
     fs.writeFileSync(VERSION_FILE, version);
+
+    // 同步安装 skills 文档
+    const foundSkillDir = findSkillDir(extractDir);
+    if (foundSkillDir) {
+      const skillsDest = path.join(require('os').homedir(), '.tier0', 'skills');
+      if (fs.existsSync(skillsDest)) {
+        fs.rmSync(skillsDest, { recursive: true, force: true });
+      }
+      copyDirSync(foundSkillDir, skillsDest);
+    }
 
     // Cleanup
     fs.unlinkSync(tmpFile);
