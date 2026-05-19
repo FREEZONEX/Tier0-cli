@@ -43,7 +43,7 @@ PLATFORM="$(detect_platform)"
 LATEST_URL="https://api.github.com/repos/$REPO/releases/latest"
 VERSION="$(curl -sL "$LATEST_URL" | grep -o '"tag_name": "[^"]*' | cut -d'"' -f4)"
 if [ -z "$VERSION" ]; then
-  VERSION="v0.2.6"
+  VERSION="v0.2.7"
 fi
 
 # 下载

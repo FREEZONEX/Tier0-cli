@@ -21,7 +21,7 @@ try {
     $Release = Invoke-RestMethod -Uri $LatestUrl -TimeoutSec 10
     $Version = $Release.tag_name
 } catch {
-    $Version = "v0.2.6"
+    $Version = "v0.2.7"
 }
 
 # 下载
