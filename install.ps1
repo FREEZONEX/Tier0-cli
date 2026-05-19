@@ -14,19 +14,15 @@ function Detect-Platform {
 }
 
 $Platform = Detect-Platform
-Write-Host "[install] detected platform: $Platform"
 
 # 获取最新版本
 $LatestUrl = "https://api.github.com/repos/$Repo/releases/latest"
-Write-Host "[install] fetching latest release..."
 try {
     $Release = Invoke-RestMethod -Uri $LatestUrl -TimeoutSec 10
     $Version = $Release.tag_name
 } catch {
-    Write-Host "[install] failed to fetch latest release, using fallback version v0.2.2"
-    $Version = "v0.2.2"
+    $Version = "v0.2.6"
 }
-Write-Host "[install] latest version: $Version"
 
 # 下载
 $PkgName = "tier0-cli-$Version-$Platform.zip"
@@ -34,11 +30,9 @@ $DownloadUrl = "https://github.com/$Repo/releases/download/$Version/$PkgName"
 $TempDir = [System.IO.Path]::GetTempPath() + [System.Guid]::NewGuid().ToString()
 New-Item -ItemType Directory -Path $TempDir | Out-Null
 
-Write-Host "[install] downloading $PkgName..."
 Invoke-RestMethod -Uri $DownloadUrl -OutFile "$TempDir\$PkgName"
 
 # 解压
-Write-Host "[install] extracting..."
 Expand-Archive -Path "$TempDir\$PkgName" -DestinationPath $TempDir -Force
 
 # 查找二进制
@@ -53,18 +47,19 @@ if (-not (Test-Path $InstallDir)) {
 }
 Copy-Item -Path $Binary.FullName -Destination "$InstallDir\tier0.exe" -Force
 
-# 添加到 PATH（如果不在）
+# 添加到 PATH（注册表 + 当前 session）
 $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($UserPath -notlike "*$InstallDir*") {
     [Environment]::SetEnvironmentVariable("Path", "$UserPath;$InstallDir", "User")
-    Write-Host "[install] added $InstallDir to PATH (restart terminal to apply)"
+}
+# 当前 session 立即生效
+if ($env:Path -notlike "*$InstallDir*") {
+    $env:Path = "$InstallDir;$env:Path"
 }
 
-Write-Host "[install] ✓ tier0 installed to $InstallDir\tier0.exe"
+Write-Host "tier0 $Version installed to $InstallDir\tier0.exe"
 Write-Host ""
-Write-Host "Next steps:"
-Write-Host "  tier0 config --base-url https://your-domain.com   # (私有化部署)"
-Write-Host "  tier0 login                                        # 登录授权"
+Write-Host "Next: tier0 login"
 
 # 清理
 Remove-Item -Recurse -Force $TempDir

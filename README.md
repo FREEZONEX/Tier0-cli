@@ -4,7 +4,25 @@ Tier0 平台命令行工具。
 
 ## 安装
 
-### 方式一：一键脚本（推荐）
+### 方式一：npm 安装（推荐，跨平台）
+
+需要 Node.js >= 16。
+
+```bash
+npm install -g @freezonex/tier0-cli
+```
+
+**特点**：
+- 首次运行自动下载对应平台的 Go 二进制
+- 无需 sudo、无需重启终端
+- 支持 Linux / macOS / Windows
+
+**npx 方式（不安装，直接运行）：**
+```bash
+npx @freezonex/tier0-cli login
+```
+
+### 方式二：一键脚本
 
 **macOS / Linux：**
 
@@ -18,13 +36,13 @@ curl -sL https://raw.githubusercontent.com/FREEZONEX/Tier0-cli/main/install.sh |
 Invoke-RestMethod -Uri https://raw.githubusercontent.com/FREEZONEX/Tier0-cli/main/install.ps1 | Invoke-Expression
 ```
 
-脚本自动检测平台架构，下载对应 Release 包，安装到系统 PATH 中。
+脚本自动检测平台架构，下载对应 Release 包，安装到 `~/.tier0/bin`，自动配置 PATH。
 
-### 方式二：手动下载
+### 方式三：手动下载
 
 从 [GitHub Releases](https://github.com/FREEZONEX/Tier0-cli/releases) 下载对应平台的预编译包，解压后将二进制放到 PATH 中。
 
-### 方式三：go install（仅二进制，不含 skills）
+### 方式四：go install（仅二进制，不含 skills）
 
 ```bash
 go install github.com/FREEZONEX/Tier0-cli@latest

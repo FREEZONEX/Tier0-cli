@@ -1,0 +1,36 @@
+#!/usr/bin/env node
+
+const { spawn } = require('child_process');
+const path = require('path');
+const fs = require('fs');
+const { install, BIN_DIR, binaryName } = require('../lib/install');
+
+async function main() {
+  const binPath = path.join(BIN_DIR, binaryName());
+
+  // Check if binary exists, if not install it
+  if (!fs.existsSync(binPath)) {
+    console.log('tier0 CLI not found, installing...');
+    await install();
+  }
+
+  // Spawn the actual binary with all arguments
+  const child = spawn(binPath, process.argv.slice(2), {
+    stdio: 'inherit',
+    shell: false,
+  });
+
+  child.on('exit', (code) => {
+    process.exit(code ?? 0);
+  });
+
+  child.on('error', (err) => {
+    console.error(`Failed to run tier0: ${err.message}`);
+    process.exit(1);
+  });
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
