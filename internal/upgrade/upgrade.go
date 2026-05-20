@@ -31,18 +31,48 @@ type Result struct {
 	ErrorMessage   string `json:"error,omitempty"`
 }
 
-// Check 检查是否有新版本可用
+// Check reports whether a newer version is available.
+// It consults a local cache (~/.tier0/update-state.json, TTL 24 h) before
+// hitting the GitHub API, matching lark-cli's approach.
 func Check() (*Result, error) {
+	// 1. Try the cache first.
+	cached, _ := loadCachedState()
+	if isCacheValid(cached) {
+		upToDate := !IsNewer(version.BuildVersion, cached.LatestVersion)
+		result := &Result{
+			CurrentVersion: version.BuildVersion,
+			LatestVersion:  cached.LatestVersion,
+			UpToDate:       upToDate,
+		}
+		return result, nil
+	}
+
+	// 2. Cache miss or expired — fetch from GitHub.
 	latestRelease, err := FetchLatestRelease()
 	if err != nil {
+		// On network failure, return what the (stale) cache says rather than
+		// surfacing a noisy error to the user.
+		if cached != nil && cached.LatestVersion != "" {
+			upToDate := !IsNewer(version.BuildVersion, cached.LatestVersion)
+			return &Result{
+				CurrentVersion: version.BuildVersion,
+				LatestVersion:  cached.LatestVersion,
+				UpToDate:       upToDate,
+			}, nil
+		}
 		return &Result{
 			CurrentVersion: version.BuildVersion,
 			ErrorMessage:   err.Error(),
 		}, nil
 	}
 
-	upToDate := !IsNewer(version.BuildVersion, latestRelease.TagName)
+	// 3. Persist the fresh result.
+	saveCachedState(&updateState{
+		LatestVersion: latestRelease.TagName,
+		CheckedAt:     time.Now().Unix(),
+	})
 
+	upToDate := !IsNewer(version.BuildVersion, latestRelease.TagName)
 	result := &Result{
 		CurrentVersion: version.BuildVersion,
 		LatestVersion:  latestRelease.TagName,

@@ -11,6 +11,7 @@ import (
 	"github.com/FREEZONEX/Tier0-cli/internal/client"
 	"github.com/FREEZONEX/Tier0-cli/internal/config"
 	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
+	"github.com/FREEZONEX/Tier0-cli/internal/notice"
 	"github.com/FREEZONEX/Tier0-cli/internal/version"
 )
 
@@ -270,11 +271,15 @@ func runAPI(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 		return fmt.Errorf("missing endpoint")
 	}
 
+	// Start background version check before any I/O.
+	checker := notice.Start()
+
 	endpoint := args[0]
 	var body string
 	var bodyFile string
 	var method string
 	var debug bool
+	var jsonMode bool
 
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
@@ -295,6 +300,8 @@ func runAPI(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 			}
 		case "--debug":
 			debug = true
+		case "--json":
+			jsonMode = true
 		}
 	}
 
@@ -324,7 +331,11 @@ func runAPI(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 		return fmt.Errorf(i18n.T("API call failed: %w", "API 调用失败: %w"), err)
 	}
 
-	fmt.Fprintln(stdout, resp)
+	// Emit notice: in JSON mode inject into resp; in plain mode print to stderr.
+	checker.Emit(resp, jsonMode, stdout, stderr)
+	if !jsonMode {
+		fmt.Fprintln(stdout, resp)
+	}
 	return nil
 }
 

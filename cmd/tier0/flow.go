@@ -12,6 +12,7 @@ import (
 	"github.com/FREEZONEX/Tier0-cli/internal/client"
 	"github.com/FREEZONEX/Tier0-cli/internal/config"
 	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
+	"github.com/FREEZONEX/Tier0-cli/internal/notice"
 )
 
 const (
@@ -25,21 +26,24 @@ func runFlow(ctx context.Context, args []string, stdout, stderr io.Writer) error
 		return nil
 	}
 
+	// Start background version check once for the whole flow command.
+	checker := notice.Start()
+
 	switch args[0] {
 	case "list", "ls":
-		return runFlowList(ctx, args[1:], stdout, stderr)
+		return runFlowList(ctx, args[1:], stdout, stderr, checker)
 	case "get":
-		return runFlowGet(ctx, args[1:], stdout, stderr)
+		return runFlowGet(ctx, args[1:], stdout, stderr, checker)
 	case "create":
-		return runFlowCreate(ctx, args[1:], stdout, stderr)
+		return runFlowCreate(ctx, args[1:], stdout, stderr, checker)
 	case "update":
-		return runFlowUpdate(ctx, args[1:], stdout, stderr)
+		return runFlowUpdate(ctx, args[1:], stdout, stderr, checker)
 	case "delete", "del", "rm":
-		return runFlowDelete(ctx, args[1:], stdout, stderr)
+		return runFlowDelete(ctx, args[1:], stdout, stderr, checker)
 	case "data":
-		return runFlowData(ctx, args[1:], stdout, stderr)
+		return runFlowData(ctx, args[1:], stdout, stderr, checker)
 	case "deploy":
-		return runFlowDeploy(ctx, args[1:], stdout, stderr)
+		return runFlowDeploy(ctx, args[1:], stdout, stderr, checker)
 	case "-h", "--help", "help":
 		printFlowHelp(stdout)
 		return nil
@@ -50,7 +54,7 @@ func runFlow(ctx context.Context, args []string, stdout, stderr io.Writer) error
 	}
 }
 
-func runFlowList(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+func runFlowList(ctx context.Context, args []string, stdout, stderr io.Writer, checker *notice.Checker) error {
 	var keyword, flowType string
 	var jsonOutput, debug bool
 
@@ -88,7 +92,7 @@ func runFlowList(ctx context.Context, args []string, stdout, stderr io.Writer) e
 	}
 
 	if jsonOutput {
-		fmt.Fprintln(stdout, resp)
+		checker.Emit(resp, true, stdout, stderr)
 		return nil
 	}
 
@@ -108,6 +112,7 @@ func runFlowList(ctx context.Context, args []string, stdout, stderr io.Writer) e
 		return nil
 	}
 	if len(result.List) == 0 {
+		checker.Emit("", false, stdout, stderr)
 		fmt.Fprintln(stdout, i18n.T("No flows found.", "暂无 Flow。"))
 		return nil
 	}
@@ -127,10 +132,11 @@ func runFlowList(ctx context.Context, args []string, stdout, stderr io.Writer) e
 		fmt.Fprintf(stdout, "%-6d  %-12s  %-26s  %-8s  %s%s\n",
 			f.Id, f.FlowType, f.FlowName, f.FlowStatus, f.Description, fav)
 	}
+	checker.Emit("", false, stdout, stderr)
 	return nil
 }
 
-func runFlowGet(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+func runFlowGet(ctx context.Context, args []string, stdout, stderr io.Writer, checker *notice.Checker) error {
 	var id int64
 	var jsonOutput, debug bool
 
@@ -168,7 +174,7 @@ func runFlowGet(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	}
 
 	if jsonOutput {
-		fmt.Fprintln(stdout, resp)
+		checker.Emit(resp, true, stdout, stderr)
 		return nil
 	}
 
@@ -200,10 +206,11 @@ func runFlowGet(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	fmt.Fprintf(stdout, "%-16s %s\n", i18n.T("Favorite:", "收藏:"), fav)
 	fmt.Fprintf(stdout, "%-16s %s (%s)\n",
 		i18n.T("Version:", "当前版本:"), f.CurrentVersionName, f.CurrentVersionType)
+	checker.Emit("", false, stdout, stderr)
 	return nil
 }
 
-func runFlowCreate(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+func runFlowCreate(ctx context.Context, args []string, stdout, stderr io.Writer, checker *notice.Checker) error {
 	var flowName, flowType, description, template string
 	var jsonOutput, debug bool
 
@@ -275,7 +282,7 @@ func runFlowCreate(ctx context.Context, args []string, stdout, stderr io.Writer)
 	}
 
 	if jsonOutput {
-		fmt.Fprintln(stdout, resp)
+		checker.Emit(resp, true, stdout, stderr)
 		return nil
 	}
 
@@ -284,13 +291,15 @@ func runFlowCreate(ctx context.Context, args []string, stdout, stderr io.Writer)
 	}
 	if err := json.Unmarshal([]byte(resp), &result); err != nil {
 		fmt.Fprintln(stdout, resp)
+		checker.Emit("", false, stdout, stderr)
 		return nil
 	}
 	fmt.Fprintf(stdout, i18n.T("✓ Flow created, ID: %d\n", "✓ Flow 创建成功，ID: %d\n"), result.Id)
+	checker.Emit("", false, stdout, stderr)
 	return nil
 }
 
-func runFlowUpdate(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+func runFlowUpdate(ctx context.Context, args []string, stdout, stderr io.Writer, checker *notice.Checker) error {
 	var id int64
 	var flowName, description, template string
 	var isFavorite int64 = -1
@@ -372,15 +381,16 @@ func runFlowUpdate(ctx context.Context, args []string, stdout, stderr io.Writer)
 	}
 
 	if jsonOutput {
-		fmt.Fprintln(stdout, resp)
+		checker.Emit(resp, true, stdout, stderr)
 		return nil
 	}
 	_ = resp
 	fmt.Fprintf(stdout, i18n.T("✓ Flow %d updated\n", "✓ Flow %d 更新成功\n"), id)
+	checker.Emit("", false, stdout, stderr)
 	return nil
 }
 
-func runFlowDelete(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+func runFlowDelete(ctx context.Context, args []string, stdout, stderr io.Writer, checker *notice.Checker) error {
 	var ids []int64
 	var jsonOutput, debug bool
 
@@ -424,7 +434,7 @@ func runFlowDelete(ctx context.Context, args []string, stdout, stderr io.Writer)
 	}
 
 	if jsonOutput {
-		fmt.Fprintln(stdout, resp)
+		checker.Emit(resp, true, stdout, stderr)
 		return nil
 	}
 	_ = resp
@@ -433,10 +443,11 @@ func runFlowDelete(ctx context.Context, args []string, stdout, stderr io.Writer)
 	} else {
 		fmt.Fprintf(stdout, i18n.T("✓ %d flows deleted\n", "✓ 已删除 %d 个 Flow\n"), len(ids))
 	}
+	checker.Emit("", false, stdout, stderr)
 	return nil
 }
 
-func runFlowData(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+func runFlowData(ctx context.Context, args []string, stdout, stderr io.Writer, checker *notice.Checker) error {
 	var id int64
 	var outFile string
 	var debug bool
@@ -482,14 +493,16 @@ func runFlowData(ctx context.Context, args []string, stdout, stderr io.Writer) e
 			return fmt.Errorf(i18n.T("failed to write file: %w", "写入文件失败: %w"), err)
 		}
 		fmt.Fprintf(stdout, i18n.T("✓ Flow data saved to %s\n", "✓ Flow 数据已保存到 %s\n"), outFile)
+		checker.Emit("", false, stdout, stderr)
 		return nil
 	}
 
-	fmt.Fprintln(stdout, resp)
+	// data command always outputs raw JSON — inject notice into it.
+	checker.Emit(resp, true, stdout, stderr)
 	return nil
 }
 
-func runFlowDeploy(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+func runFlowDeploy(ctx context.Context, args []string, stdout, stderr io.Writer, checker *notice.Checker) error {
 	var id int64
 	var flowsJSON string
 	var jsonOutput, debug bool
@@ -552,7 +565,7 @@ func runFlowDeploy(ctx context.Context, args []string, stdout, stderr io.Writer)
 	}
 
 	if jsonOutput {
-		fmt.Fprintln(stdout, resp)
+		checker.Emit(resp, true, stdout, stderr)
 		return nil
 	}
 
@@ -561,12 +574,14 @@ func runFlowDeploy(ctx context.Context, args []string, stdout, stderr io.Writer)
 	}
 	if err := json.Unmarshal([]byte(resp), &result); err != nil {
 		fmt.Fprintln(stdout, resp)
+		checker.Emit("", false, stdout, stderr)
 		return nil
 	}
 	fmt.Fprintf(stdout, i18n.T(
 		"✓ Flow %d deployed, Node-RED FlowId: %s\n",
 		"✓ Flow %d 部署成功，Node-RED FlowId: %s\n",
 	), id, result.FlowId)
+	checker.Emit("", false, stdout, stderr)
 	return nil
 }
 

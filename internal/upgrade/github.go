@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -135,9 +136,48 @@ func (r *Release) FindAsset() *Asset {
 	return nil
 }
 
-// IsNewer 判断 release 版本是否比当前版本新
+// IsNewer reports whether latest is a higher semver than current.
+// "dev" builds are never considered outdated.
+// Falls back to string inequality if either version is not valid semver.
 func IsNewer(current, latest string) bool {
-	current = strings.TrimPrefix(current, "v")
-	latest = strings.TrimPrefix(latest, "v")
-	return current != latest && current != "dev"
+	if strings.TrimPrefix(current, "v") == "dev" {
+		return false
+	}
+	c := parseSemver(current)
+	l := parseSemver(latest)
+	if c == nil || l == nil {
+		// Non-semver fallback: just compare trimmed strings.
+		return strings.TrimPrefix(current, "v") != strings.TrimPrefix(latest, "v")
+	}
+	for i := 0; i < 3; i++ {
+		if l[i] > c[i] {
+			return true
+		}
+		if l[i] < c[i] {
+			return false
+		}
+	}
+	return false
+}
+
+// parseSemver parses a version string like "v1.2.3" or "1.2.3" into [major, minor, patch].
+// Returns nil if the string is not a valid semver.
+func parseSemver(v string) []int {
+	v = strings.TrimPrefix(v, "v")
+	// Strip pre-release / build metadata (e.g. "1.2.3-beta.1+build")
+	v = strings.SplitN(v, "-", 2)[0]
+	v = strings.SplitN(v, "+", 2)[0]
+	parts := strings.Split(v, ".")
+	if len(parts) != 3 {
+		return nil
+	}
+	nums := make([]int, 3)
+	for i, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			return nil
+		}
+		nums[i] = n
+	}
+	return nums
 }
