@@ -4,12 +4,31 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 )
+
+// httpGetJSON performs a GET request and returns the response body as a string.
+func httpGetJSON(url string) (string, error) {
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return "", fmt.Errorf("HTTP GET failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP %d from %s", resp.StatusCode, url)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read response failed: %w", err)
+	}
+	return string(body), nil
+}
 
 // SkillInfo 单个 skill 的信息
 type SkillInfo struct {
@@ -185,11 +204,31 @@ func readSkillDescription(skillFile string) string {
 	return ""
 }
 
-// CheckSkillsUpdate 检查 skills 是否有新版本
+// skillRepoLatestCommit fetches the latest commit SHA of the Tier0-skill
+// main branch from the GitHub API. The SHA is used as a lightweight
+// "version" so we can detect when the skill repo has been updated even
+// without a formal release tag.
+func skillRepoLatestCommit() (string, error) {
+	type ghCommit struct {
+		SHA string `json:"sha"`
+	}
+	url := "https://api.github.com/repos/FREEZONEX/Tier0-skill/commits/main"
+	resp, err := httpGetJSON(url)
+	if err != nil {
+		return "", err
+	}
+	var c ghCommit
+	if err := json.Unmarshal([]byte(resp), &c); err != nil || c.SHA == "" {
+		return "", fmt.Errorf("failed to parse skill repo commit: %s", resp)
+	}
+	return c.SHA[:8], nil // short SHA, 8 chars
+}
+
+// CheckSkillsUpdate 检查 skills 是否有新版本（直接对比 Tier0-skill 仓库最新 commit）
 func CheckSkillsUpdate(skillsDir string) (*SkillsUpdateResult, error) {
 	currentVer := GetSkillsVersion(skillsDir)
 
-	latestRelease, err := FetchLatestRelease()
+	latestSHA, err := skillRepoLatestCommit()
 	if err != nil {
 		return &SkillsUpdateResult{
 			CurrentVersion: currentVer,
@@ -197,16 +236,19 @@ func CheckSkillsUpdate(skillsDir string) (*SkillsUpdateResult, error) {
 		}, nil
 	}
 
-	upToDate := !IsNewer(currentVer, latestRelease.TagName)
+	upToDate := currentVer == latestSHA
 
 	return &SkillsUpdateResult{
 		CurrentVersion: currentVer,
-		LatestVersion:  latestRelease.TagName,
+		LatestVersion:  latestSHA,
 		UpToDate:       upToDate,
 	}, nil
 }
 
-// UpdateSkills 更新 skills 到最新版本
+// skillRepoArchiveURL is the GitHub archive URL for the Tier0-skill main branch.
+const skillRepoArchiveURL = "https://github.com/FREEZONEX/Tier0-skill/archive/refs/heads/main.zip"
+
+// UpdateSkills 更新 skills — 直接从 Tier0-skill 仓库拉取，与 CLI release 解耦。
 func UpdateSkills(skillsDir string, dryRun bool) (*SkillsUpdateResult, error) {
 	if _, err := os.Stat(skillsDir); os.IsNotExist(err) {
 		if dryRun {
@@ -230,19 +272,6 @@ func UpdateSkills(skillsDir string, dryRun bool) (*SkillsUpdateResult, error) {
 		return result, nil
 	}
 
-	latestRelease, err := FetchLatestRelease()
-	if err != nil {
-		result.ErrorMessage = err.Error()
-		return result, err
-	}
-
-	asset := latestRelease.FindAsset()
-	if asset == nil {
-		err := fmt.Errorf("未找到适配当前平台的 skills 包")
-		result.ErrorMessage = err.Error()
-		return result, err
-	}
-
 	tmpDir, err := os.MkdirTemp("", "tier0-skills-update-*")
 	if err != nil {
 		result.ErrorMessage = fmt.Sprintf("创建临时目录失败: %v", err)
@@ -250,9 +279,10 @@ func UpdateSkills(skillsDir string, dryRun bool) (*SkillsUpdateResult, error) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	archivePath := filepath.Join(tmpDir, asset.Name)
-	if err := downloadFile(asset.BrowserDownloadURL, archivePath); err != nil {
-		result.ErrorMessage = fmt.Sprintf("下载 skills 包失败: %v", err)
+	// Download the Tier0-skill repo archive directly.
+	archivePath := filepath.Join(tmpDir, "tier0-skill-main.zip")
+	if err := downloadFile(skillRepoArchiveURL, archivePath); err != nil {
+		result.ErrorMessage = fmt.Sprintf("下载 skill 仓库失败: %v", err)
 		return result, err
 	}
 
@@ -262,19 +292,20 @@ func UpdateSkills(skillsDir string, dryRun bool) (*SkillsUpdateResult, error) {
 		return result, err
 	}
 
-	if err := extract(archivePath, extractDir); err != nil {
-		result.ErrorMessage = fmt.Sprintf("解压 skills 包失败: %v", err)
+	if err := extractZip(archivePath, extractDir); err != nil {
+		result.ErrorMessage = fmt.Sprintf("解压 skill 仓库失败: %v", err)
 		return result, err
 	}
 
-	srcSkillsDir := findSkillDir(extractDir)
+	// GitHub archive extracts into "Tier0-skill-main/" — that root IS the skill dir.
+	srcSkillsDir := findSkillRepoRoot(extractDir)
 	if srcSkillsDir == "" {
-		result.ErrorMessage = "未在安装包中找到 skills 目录"
-		return result, err
+		result.ErrorMessage = "未在下载包中找到 skill 内容"
+		return result, fmt.Errorf("%s", result.ErrorMessage)
 	}
 
 	backupDir := filepath.Join(tmpDir, "backup")
-	if err := os.Rename(skillsDir, backupDir); err != nil {
+	if err := os.Rename(skillsDir, backupDir); err != nil && !os.IsNotExist(err) {
 		result.ErrorMessage = fmt.Sprintf("备份旧 skills 失败: %v", err)
 		return result, err
 	}
@@ -286,6 +317,11 @@ func UpdateSkills(skillsDir string, dryRun bool) (*SkillsUpdateResult, error) {
 		return result, err
 	}
 
+	// Write _meta.json with the commit SHA so future checks can compare.
+	metaContent := fmt.Sprintf(`{"version":%q,"updatedAt":%q}`+"\n",
+		result.LatestVersion, time.Now().UTC().Format(time.RFC3339))
+	_ = os.WriteFile(filepath.Join(skillsDir, "_meta.json"), []byte(metaContent), 0o644)
+
 	entries, _ := os.ReadDir(skillsDir)
 	for _, e := range entries {
 		if e.IsDir() {
@@ -294,6 +330,26 @@ func UpdateSkills(skillsDir string, dryRun bool) (*SkillsUpdateResult, error) {
 	}
 
 	return result, nil
+}
+
+// findSkillRepoRoot locates the extracted Tier0-skill repo root.
+// GitHub archives extract into a single top-level directory like "Tier0-skill-main/".
+func findSkillRepoRoot(extractDir string) string {
+	entries, err := os.ReadDir(extractDir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		candidate := filepath.Join(extractDir, e.Name())
+		// The repo root should contain SKILL.md directly.
+		if _, err := os.Stat(filepath.Join(candidate, "SKILL.md")); err == nil {
+			return candidate
+		}
+	}
+	return ""
 }
 
 // findSkillDir 在解压目录中查找 skill/ 目录
