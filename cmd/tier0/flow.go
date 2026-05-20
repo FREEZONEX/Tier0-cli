@@ -3,12 +3,14 @@ package tier0
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strconv"
 	"strings"
 
+	"github.com/FREEZONEX/Tier0-cli/internal/apierr"
 	"github.com/FREEZONEX/Tier0-cli/internal/client"
 	"github.com/FREEZONEX/Tier0-cli/internal/config"
 	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
@@ -88,7 +90,7 @@ func runFlowList(ctx context.Context, args []string, stdout, stderr io.Writer, c
 
 	resp, err := doFlowAPI(ctx, "/openapi/v1/flow/list", string(body), debug)
 	if err != nil {
-		return fmt.Errorf(i18n.T("flow list failed: %w", "flow list 失败: %w"), err)
+		return outputError(stderr, jsonOutput, err)
 	}
 
 	if jsonOutput {
@@ -170,7 +172,7 @@ func runFlowGet(ctx context.Context, args []string, stdout, stderr io.Writer, ch
 	body, _ := json.Marshal(map[string]int64{"id": id})
 	resp, err := doFlowAPI(ctx, "/openapi/v1/flow/get", string(body), debug)
 	if err != nil {
-		return fmt.Errorf(i18n.T("flow get failed: %w", "flow get 失败: %w"), err)
+		return outputError(stderr, jsonOutput, err)
 	}
 
 	if jsonOutput {
@@ -278,7 +280,7 @@ func runFlowCreate(ctx context.Context, args []string, stdout, stderr io.Writer,
 	body, _ := json.Marshal(payload)
 	resp, err := doFlowAPI(ctx, "/openapi/v1/flow/create", string(body), debug)
 	if err != nil {
-		return fmt.Errorf(i18n.T("flow create failed: %w", "flow create 失败: %w"), err)
+		return outputError(stderr, jsonOutput, err)
 	}
 
 	if jsonOutput {
@@ -377,7 +379,7 @@ func runFlowUpdate(ctx context.Context, args []string, stdout, stderr io.Writer,
 	body, _ := json.Marshal(payload)
 	resp, err := doFlowAPI(ctx, "/openapi/v1/flow/update", string(body), debug)
 	if err != nil {
-		return fmt.Errorf(i18n.T("flow update failed: %w", "flow update 失败: %w"), err)
+		return outputError(stderr, jsonOutput, err)
 	}
 
 	if jsonOutput {
@@ -430,7 +432,7 @@ func runFlowDelete(ctx context.Context, args []string, stdout, stderr io.Writer,
 	body, _ := json.Marshal(map[string][]int64{"ids": ids})
 	resp, err := doFlowAPI(ctx, "/openapi/v1/flow/delete", string(body), debug)
 	if err != nil {
-		return fmt.Errorf(i18n.T("flow delete failed: %w", "flow delete 失败: %w"), err)
+		return outputError(stderr, jsonOutput, err)
 	}
 
 	if jsonOutput {
@@ -485,7 +487,7 @@ func runFlowData(ctx context.Context, args []string, stdout, stderr io.Writer, c
 	body, _ := json.Marshal(map[string]int64{"id": id})
 	resp, err := doFlowAPI(ctx, "/openapi/v1/flow/flowdata", string(body), debug)
 	if err != nil {
-		return fmt.Errorf(i18n.T("flow data failed: %w", "flow data 失败: %w"), err)
+		return outputError(stderr, true, err)
 	}
 
 	if outFile != "" {
@@ -561,7 +563,7 @@ func runFlowDeploy(ctx context.Context, args []string, stdout, stderr io.Writer,
 	body, _ := json.Marshal(payload)
 	resp, err := doFlowAPI(ctx, "/openapi/v1/flow/deploy", string(body), debug)
 	if err != nil {
-		return fmt.Errorf(i18n.T("flow deploy failed: %w", "flow deploy 失败: %w"), err)
+		return outputError(stderr, jsonOutput, err)
 	}
 
 	if jsonOutput {
@@ -592,14 +594,16 @@ func doFlowAPI(ctx context.Context, endpoint, body string, debug bool) (string, 
 		return "", fmt.Errorf(i18n.T("failed to load config: %w", "加载配置失败: %w"), err)
 	}
 	if profile.APIKey == "" {
-		return "", fmt.Errorf(i18n.T(
-			"API Key not found, please run: tier0 login",
-			"未找到 API Key，请先运行 tier0 login",
-		))
+		return "", apierr.New(401, `{"code":401,"msg":"API Key not found"}`)
 	}
 	c := client.New(profile.BaseURL, profile.APIKey)
 	return c.DoAPI(ctx, endpoint, "POST", body, debug)
 }
+
+// flowOutputError is a local alias so flow subcommand handlers can call
+// outputError (defined in root.go) in the same package without circular refs.
+// errors.As is used inside outputError to unwrap *apierr.APIError.
+var _ = errors.As // ensure errors import is used
 
 func printFlowHelp(w io.Writer) {
 	fmt.Fprintln(w, i18n.T(

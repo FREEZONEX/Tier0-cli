@@ -2,11 +2,13 @@ package tier0
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
+	"github.com/FREEZONEX/Tier0-cli/internal/apierr"
 	"github.com/FREEZONEX/Tier0-cli/internal/auth"
 	"github.com/FREEZONEX/Tier0-cli/internal/client"
 	"github.com/FREEZONEX/Tier0-cli/internal/config"
@@ -319,16 +321,13 @@ func runAPI(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	}
 
 	if profile.APIKey == "" {
-		return fmt.Errorf(i18n.T(
-			"API Key not found, please run: tier0 login",
-			"未找到 API Key，请先运行 tier0 login",
-		))
+		return outputError(stderr, jsonMode, apierr.New(401, `{"code":401,"msg":"API Key not found"}`))
 	}
 
 	c := client.New(profile.BaseURL, profile.APIKey)
 	resp, err := c.DoAPI(ctx, endpoint, method, body, debug)
 	if err != nil {
-		return fmt.Errorf(i18n.T("API call failed: %w", "API 调用失败: %w"), err)
+		return outputError(stderr, jsonMode, err)
 	}
 
 	// Emit notice: in JSON mode inject into resp; in plain mode print to stderr.
@@ -433,8 +432,24 @@ func resolveBaseURL(baseURLArg string) (string, error) {
 }
 
 func outputError(stderr io.Writer, jsonMode bool, err error) error {
+	var ae *apierr.APIError
+	if errors.As(err, &ae) {
+		if jsonMode {
+			fmt.Fprintln(stderr, ae.Format())
+		} else {
+			fmt.Fprintf(stderr, "\n✗ %s\n", ae.Message)
+			if ae.Hint != "" {
+				fmt.Fprintf(stderr, i18n.T("  → %s\n", "  → %s\n"), ae.Hint)
+			}
+			if ae.HintCommand != "" {
+				fmt.Fprintf(stderr, i18n.T("  Run: %s\n", "  执行: %s\n"), ae.HintCommand)
+			}
+		}
+		return err
+	}
 	if jsonMode {
-		fmt.Fprintf(stderr, `{"event":"error","error":"%s"}`+"\n", err.Error())
+		msg := strings.ReplaceAll(err.Error(), `"`, `\"`)
+		fmt.Fprintf(stderr, `{"ok":false,"error":{"code":0,"message":"%s"}}`+"\n", msg)
 	} else {
 		fmt.Fprintf(stderr, "\n✗ %v\n", err)
 	}

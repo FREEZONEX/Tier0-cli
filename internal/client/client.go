@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/FREEZONEX/Tier0-cli/internal/apierr"
 )
 
 // Client HTTP API 客户端
@@ -92,7 +94,7 @@ func (c *Client) DoAPI(ctx context.Context, endpoint, method, body string, debug
 	}
 
 	if resp.StatusCode >= 400 {
-		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
+		return "", apierr.New(resp.StatusCode, string(respBody))
 	}
 
 	return string(respBody), nil
