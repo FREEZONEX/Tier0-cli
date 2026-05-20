@@ -97,10 +97,9 @@ func runSkillsUpdate(ctx context.Context, args []string, stdout, stderr io.Write
 
 	skillsDir := upgrade.GetDefaultSkillsDir()
 	if skillsDir == "" {
-		return fmt.Errorf(i18n.T(
-			"skills directory not found, please install the full CLI package",
-			"未找到 skills 目录，请先安装 CLI 完整包",
-		))
+		// No existing skills dir found — fall back to ~/.tier0/skills so
+		// UpdateSkills can create it and pull from the Tier0-skill repo.
+		skillsDir = upgrade.FallbackSkillsDir()
 	}
 
 	result, err := upgrade.UpdateSkills(skillsDir, dryRun)

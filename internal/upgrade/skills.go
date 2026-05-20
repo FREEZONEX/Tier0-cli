@@ -318,9 +318,16 @@ func UpdateSkills(skillsDir string, dryRun bool) (*SkillsUpdateResult, error) {
 	}
 
 	// Write _meta.json with the commit SHA so future checks can compare.
-	metaContent := fmt.Sprintf(`{"version":%q,"updatedAt":%q}`+"\n",
-		result.LatestVersion, time.Now().UTC().Format(time.RFC3339))
-	_ = os.WriteFile(filepath.Join(skillsDir, "_meta.json"), []byte(metaContent), 0o644)
+	type metaJSON struct {
+		Version   string `json:"version"`
+		UpdatedAt string `json:"updated_at"`
+	}
+	metaBytes, _ := json.Marshal(metaJSON{
+		Version:   result.LatestVersion,
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+	})
+	_ = os.MkdirAll(skillsDir, 0o755)
+	_ = os.WriteFile(filepath.Join(skillsDir, "_meta.json"), append(metaBytes, '\n'), 0o644)
 
 	entries, _ := os.ReadDir(skillsDir)
 	for _, e := range entries {
@@ -414,7 +421,7 @@ func copyDir(src, dst string) error {
 	})
 }
 
-// GetDefaultSkillsDir 获取默认的 skills 目录路径
+// GetDefaultSkillsDir 获取默认的 skills 目录路径（仅返回已存在的目录）
 func GetDefaultSkillsDir() string {
 	binaryPath, err := os.Executable()
 	if err != nil {
@@ -426,9 +433,23 @@ func GetDefaultSkillsDir() string {
 	}
 	home, err := os.UserHomeDir()
 	if err == nil {
-		return filepath.Join(home, ".tier0", "skills")
+		candidate := filepath.Join(home, ".tier0", "skills")
+		if fi, err := os.Stat(candidate); err == nil && fi.IsDir() {
+			return candidate
+		}
 	}
 	return ""
+}
+
+// FallbackSkillsDir returns ~/.tier0/skills as the default install location
+// when no existing skills directory is found. The directory may not exist yet;
+// UpdateSkills will create it.
+func FallbackSkillsDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(os.TempDir(), ".tier0", "skills")
+	}
+	return filepath.Join(home, ".tier0", "skills")
 }
 
 // SkillsLastUpdated 获取 skills 的最后更新时间
