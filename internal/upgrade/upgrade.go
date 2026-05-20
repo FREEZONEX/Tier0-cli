@@ -98,6 +98,11 @@ func Perform(opts Options) (*Result, error) {
 	}
 
 	if opts.TargetVersion == "" && !IsNewer(version.BuildVersion, release.TagName) {
+		// Update cache so background notice also sees the current latest.
+		saveCachedState(&updateState{
+			LatestVersion: release.TagName,
+			CheckedAt:     time.Now().Unix(),
+		})
 		return &Result{
 			CurrentVersion: version.BuildVersion,
 			LatestVersion:  release.TagName,

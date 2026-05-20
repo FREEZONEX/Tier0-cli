@@ -45,7 +45,13 @@ func runUpgrade(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	}
 
 	if opts.DryRun {
-		result, err := upgrade.Check()
+		// --dry-run uses Perform() (same live GitHub query as real upgrade)
+		// so it always reflects the actual latest release, not a stale cache.
+		fmt.Fprintf(stdout, i18n.T(
+			"Checking for updates (current: %s)...\n",
+			"正在检查更新（当前版本: %s）...\n",
+		), version.BuildVersion)
+		result, err := upgrade.Perform(opts)
 		if err != nil {
 			return fmt.Errorf(i18n.T("failed to check for updates: %w", "检查更新失败: %w"), err)
 		}
