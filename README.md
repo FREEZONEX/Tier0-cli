@@ -183,10 +183,11 @@ tier0 login
 
 > **优先级**：`--base-url` 参数 > 环境变量 `TIER0_BASE_URL` > 配置文件 > 默认地址
 
-## 版本历史
+## 版本历史 / Changelog
 
-| 版本 | 日期 | 说明 |
-|------|------|------|
+| Version | Date | Notes |
+|---------|------|-------|
+| [v0.3.0](https://github.com/FREEZONEX/Tier0-cli/releases/tag/v0.3.0) | 2026-05-20 | Add `flow` command (Node-RED SourceFlow/EventFlow management); bilingual UI (en/zh), default English |
 | [v0.2.4](https://github.com/FREEZONEX/Tier0-cli/releases/tag/v0.2.4) | 2026-05-18 | 修复 `login --setup-code` 轮询时 WorkspaceID 类型不匹配导致的 JSON 解码失败 |
 | [v0.2.3](https://github.com/FREEZONEX/Tier0-cli/releases/tag/v0.2.3) | 2026-05-18 | 新增跨平台一键安装脚本（install.sh / install.ps1），支持 macOS/Linux/Windows 自动安装 |
 | [v0.2.2](https://github.com/FREEZONEX/Tier0-cli/releases/tag/v0.2.2) | 2026-05-18 | 修复 `login` 读取配置文件中的 baseURL；Skill 文档明确 config 必须在 login 之前 |
