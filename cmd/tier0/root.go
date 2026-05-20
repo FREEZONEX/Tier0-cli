@@ -10,11 +10,16 @@ import (
 	"github.com/FREEZONEX/Tier0-cli/internal/auth"
 	"github.com/FREEZONEX/Tier0-cli/internal/client"
 	"github.com/FREEZONEX/Tier0-cli/internal/config"
+	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
 	"github.com/FREEZONEX/Tier0-cli/internal/version"
 )
 
-// Execute 执行根命令
+// Execute is the CLI entry point.
 func Execute() error {
+	// Resolve language as early as possible so every subsequent message
+	// is already in the right language.
+	initLang()
+
 	args := os.Args[1:]
 	if len(args) == 0 {
 		printUsage(os.Stdout)
@@ -29,12 +34,12 @@ func Execute() error {
 		return runLogin(ctx, args[1:], os.Stdout, os.Stderr)
 	case "api":
 		return runAPI(ctx, args[1:], os.Stdout, os.Stderr)
+	case "flow":
+		return runFlow(ctx, args[1:], os.Stdout, os.Stderr)
 	case "config":
 		return runConfig(ctx, args[1:], os.Stdout, os.Stderr)
 	case "generate-skills":
 		return runGenerateSkills(ctx, args[1:], os.Stdout, os.Stderr)
-	case "flow":
-		return runFlow(ctx, args[1:], os.Stdout, os.Stderr)
 	case "skills":
 		return runSkills(ctx, args[1:], os.Stdout, os.Stderr)
 	case "upgrade":
@@ -46,34 +51,85 @@ func Execute() error {
 		printUsage(os.Stdout)
 		return nil
 	default:
-		fmt.Fprintf(os.Stderr, "未知命令: %s\n", cmd)
+		fmt.Fprintf(os.Stderr, i18n.T("unknown command: %s\n", "未知命令: %s\n"), cmd)
 		printUsage(os.Stderr)
 		return fmt.Errorf("unknown command: %s", cmd)
 	}
 }
 
+// initLang loads the stored language preference and activates it.
+// Priority: TIER0_LANG env > config file > default (en).
+func initLang() {
+	if envLang := os.Getenv("TIER0_LANG"); envLang != "" {
+		i18n.SetLang(envLang)
+		return
+	}
+	profile, err := config.LoadProfile()
+	if err == nil && profile.Lang != "" {
+		i18n.SetLang(profile.Lang)
+	}
+	// Default is already "en" inside the i18n package.
+}
+
 func printUsage(w io.Writer) {
-	fmt.Fprintln(w, "tier0 — Tier0 平台命令行工具")
+	fmt.Fprintln(w, i18n.T(
+		"tier0 — Tier0 Platform CLI",
+		"tier0 — Tier0 平台命令行工具",
+	))
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "用法: tier0 <command> [flags]")
+	fmt.Fprintln(w, i18n.T("Usage: tier0 <command> [flags]", "用法: tier0 <command> [flags]"))
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "命令:")
-	fmt.Fprintln(w, "  login             Device Flow 登录授权")
-	fmt.Fprintln(w, "  api <endpoint>    调用 API 接口")
-	fmt.Fprintln(w, "  flow              管理 Node-RED Flow（list/get/create/update/delete/data/deploy）")
-	fmt.Fprintln(w, "  config            查看/管理配置")
-	fmt.Fprintln(w, "  skills            管理 Skills（list/update/version）")
-	fmt.Fprintln(w, "  upgrade           升级 CLI 到最新版本")
-	fmt.Fprintln(w, "  generate-skills   生成 Skills 文档")
-	fmt.Fprintln(w, "  version           显示版本")
-	fmt.Fprintln(w, "  help              显示帮助")
+	fmt.Fprintln(w, i18n.T("Commands:", "命令:"))
+	fmt.Fprintln(w, i18n.T(
+		"  login             Authenticate via Device Flow",
+		"  login             Device Flow 登录授权",
+	))
+	fmt.Fprintln(w, i18n.T(
+		"  api <endpoint>    Call an API endpoint directly",
+		"  api <endpoint>    直接调用 API 接口",
+	))
+	fmt.Fprintln(w, i18n.T(
+		"  flow              Manage Node-RED Flows (list/get/create/update/delete/data/deploy)",
+		"  flow              管理 Node-RED Flow（list/get/create/update/delete/data/deploy）",
+	))
+	fmt.Fprintln(w, i18n.T(
+		"  config            View or update configuration",
+		"  config            查看/管理配置",
+	))
+	fmt.Fprintln(w, i18n.T(
+		"  skills            Manage Skills (list/update/version)",
+		"  skills            管理 Skills（list/update/version）",
+	))
+	fmt.Fprintln(w, i18n.T(
+		"  upgrade           Upgrade CLI to the latest version",
+		"  upgrade           升级 CLI 到最新版本",
+	))
+	fmt.Fprintln(w, i18n.T(
+		"  version           Show version",
+		"  version           显示版本",
+	))
+	fmt.Fprintln(w, i18n.T(
+		"  help              Show help",
+		"  help              显示帮助",
+	))
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "环境变量:")
-	fmt.Fprintln(w, "  TIER0_BASE_URL    平台地址 (默认: https://tier0.dev/)")
-	fmt.Fprintln(w, "  TIER0_API_KEY     API Key")
+	fmt.Fprintln(w, i18n.T("Environment variables:", "环境变量:"))
+	fmt.Fprintln(w, i18n.T(
+		"  TIER0_BASE_URL    Platform base URL (default: https://tier0.dev/)",
+		"  TIER0_BASE_URL    平台地址 (默认: https://tier0.dev/)",
+	))
+	fmt.Fprintln(w, i18n.T(
+		"  TIER0_API_KEY     API Key (overrides config file)",
+		"  TIER0_API_KEY     API Key（优先于配置文件）",
+	))
+	fmt.Fprintln(w, i18n.T(
+		"  TIER0_LANG        UI language: en (default) | zh",
+		"  TIER0_LANG        界面语言: en（默认）| zh",
+	))
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "示例:")
+	fmt.Fprintln(w, i18n.T("Examples:", "示例:"))
 	fmt.Fprintln(w, "  tier0 config --base-url https://tier0-eks-frontend.tier0.dev")
+	fmt.Fprintln(w, "  tier0 config --lang zh")
 	fmt.Fprintln(w, "  tier0 login")
 	fmt.Fprintln(w, "  tier0 login --no-wait")
 	fmt.Fprintln(w, "  tier0 api /openapi/v1/uns/read --body '{\"topics\":[\"demo\"]}'")
@@ -116,30 +172,38 @@ func runLogin(ctx context.Context, args []string, stdout, stderr io.Writer) erro
 		return outputError(stderr, jsonMode, err)
 	}
 
-	// --setup-code 模式：直接轮询
 	if setupCode != "" {
 		return runLoginPoll(ctx, baseURL, setupCode, jsonMode, stdout, stderr)
 	}
 
-	// 生成 setupCode
 	setupCode = auth.GenerateSetupCode()
 	consoleURL := auth.BuildConsoleURL(baseURL, setupCode)
 
-	// --no-wait 模式
 	if noWait {
 		if jsonMode {
 			fmt.Fprintf(stdout, `{"status":"authorization_required","verification_url":"%s","setup_code":"%s","expires_in":600}`+"\n", consoleURL, setupCode)
 		} else {
-			fmt.Fprintf(stdout, "请在浏览器中完成授权：%s\n", consoleURL)
-			fmt.Fprintf(stdout, "授权完成后执行: tier0 login --setup-code %s\n", setupCode)
+			fmt.Fprintf(stdout, i18n.T(
+				"Please complete authorization in your browser: %s\n",
+				"请在浏览器中完成授权：%s\n",
+			), consoleURL)
+			fmt.Fprintf(stdout, i18n.T(
+				"After authorization, run: tier0 login --setup-code %s\n",
+				"授权完成后执行: tier0 login --setup-code %s\n",
+			), setupCode)
 		}
 		return nil
 	}
 
-	// 默认模式：显示 URL + 阻塞轮询
-	fmt.Fprintln(stdout, "请在浏览器中完成授权：")
+	fmt.Fprintln(stdout, i18n.T(
+		"Please complete authorization in your browser:",
+		"请在浏览器中完成授权：",
+	))
 	fmt.Fprintln(stdout, consoleURL)
-	fmt.Fprintln(stdout, "\n正在等待授权...（每5秒检测一次，最多10分钟）")
+	fmt.Fprintln(stdout, i18n.T(
+		"\nWaiting for authorization... (polling every 5s, up to 10 minutes)",
+		"\n正在等待授权...（每5秒检测一次，最多10分钟）",
+	))
 
 	return runLoginPoll(ctx, baseURL, setupCode, jsonMode, stdout, stderr)
 }
@@ -151,41 +215,58 @@ func runLoginPoll(ctx context.Context, baseURL, setupCode string, jsonMode bool,
 		}
 		if pollErr != nil {
 			if current == 0 {
-				fmt.Fprintf(stdout, "\r  正在检测...（第 %d/%d 次）网络暂时不稳定，继续等待...\n", current+1, total)
+				fmt.Fprintf(stdout, i18n.T(
+					"\r  Polling... (%d/%d) Network hiccup, retrying...\n",
+					"\r  正在检测...（第 %d/%d 次）网络暂时不稳定，继续等待...\n",
+				), current+1, total)
 			}
 			return
 		}
 		if current%6 == 0 && current > 0 {
 			remainingMin := (total - current) * 5 / 60
-			fmt.Fprintf(stdout, "\r  正在等待授权...（第 %d/%d 次检测，剩余约 %d 分钟）", current+1, total, remainingMin)
+			fmt.Fprintf(stdout, i18n.T(
+				"\r  Waiting for authorization... (check %d/%d, ~%d min remaining)",
+				"\r  正在等待授权...（第 %d/%d 次检测，剩余约 %d 分钟）",
+			), current+1, total, remainingMin)
 		}
 	})
 	if err != nil {
 		return outputError(stderr, jsonMode, err)
 	}
 
-	// 保存配置
 	profile := config.Profile{
 		BaseURL: baseURL,
 		APIKey:  result.APIKey,
 	}
 	if err := config.SaveProfile(profile); err != nil {
-		return outputError(stderr, jsonMode, fmt.Errorf("保存配置失败: %w", err))
+		return outputError(stderr, jsonMode, fmt.Errorf(i18n.T(
+			"failed to save config: %w",
+			"保存配置失败: %w",
+		), err))
 	}
 
 	if jsonMode {
 		fmt.Fprintf(stdout, `{"event":"authorization_complete","api_key":"%s"}`+"\n", result.APIKey)
 	} else {
-		fmt.Fprintln(stdout, "\n✓ 授权成功！")
-		fmt.Fprintf(stdout, "API Key: %s...（已保存）\n", result.APIKey[:8])
-		fmt.Fprintln(stdout, "✓ 初始化完成，您现在可以使用 tier0 api 命令了。")
+		fmt.Fprintln(stdout, i18n.T("\n✓ Authorization successful!", "\n✓ 授权成功！"))
+		fmt.Fprintf(stdout, i18n.T(
+			"API Key: %s... (saved)\n",
+			"API Key: %s...（已保存）\n",
+		), result.APIKey[:8])
+		fmt.Fprintln(stdout, i18n.T(
+			"✓ Setup complete. You can now use tier0 api commands.",
+			"✓ 初始化完成，您现在可以使用 tier0 api 命令了。",
+		))
 	}
 	return nil
 }
 
 func runAPI(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "用法: tier0 api <endpoint> [--body '<json>'] [--body-file FILE] [--method GET|POST] [--debug]")
+		fmt.Fprintln(stderr, i18n.T(
+			"Usage: tier0 api <endpoint> [--body '<json>'] [--body-file FILE] [--method GET|POST] [--debug]",
+			"用法: tier0 api <endpoint> [--body '<json>'] [--body-file FILE] [--method GET|POST] [--debug]",
+		))
 		return fmt.Errorf("missing endpoint")
 	}
 
@@ -220,24 +301,27 @@ func runAPI(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	if bodyFile != "" {
 		raw, err := os.ReadFile(bodyFile)
 		if err != nil {
-			return fmt.Errorf("读取 body 文件失败: %w", err)
+			return fmt.Errorf(i18n.T("failed to read body file: %w", "读取 body 文件失败: %w"), err)
 		}
 		body = string(raw)
 	}
 
 	profile, err := config.LoadProfile()
 	if err != nil {
-		return fmt.Errorf("加载配置失败: %w", err)
+		return fmt.Errorf(i18n.T("failed to load config: %w", "加载配置失败: %w"), err)
 	}
 
 	if profile.APIKey == "" {
-		return fmt.Errorf("未找到 API Key，请先运行 tier0 login")
+		return fmt.Errorf(i18n.T(
+			"API Key not found, please run: tier0 login",
+			"未找到 API Key，请先运行 tier0 login",
+		))
 	}
 
 	c := client.New(profile.BaseURL, profile.APIKey)
 	resp, err := c.DoAPI(ctx, endpoint, method, body, debug)
 	if err != nil {
-		return fmt.Errorf("API 调用失败: %w", err)
+		return fmt.Errorf(i18n.T("API call failed: %w", "API 调用失败: %w"), err)
 	}
 
 	fmt.Fprintln(stdout, resp)
@@ -246,6 +330,8 @@ func runAPI(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 
 func runConfig(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	var setBaseURL string
+	var setLang string
+
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--base-url":
@@ -253,42 +339,71 @@ func runConfig(ctx context.Context, args []string, stdout, stderr io.Writer) err
 				setBaseURL = strings.TrimRight(args[i+1], "/")
 				i++
 			}
+		case "--lang":
+			if i+1 < len(args) {
+				setLang = strings.ToLower(strings.TrimSpace(args[i+1]))
+				i++
+			}
 		}
 	}
 
-	// 设置模式
-	if setBaseURL != "" {
-		profile, _ := config.LoadProfile()
-		profile.BaseURL = setBaseURL
-		if err := config.SaveProfile(profile); err != nil {
-			return fmt.Errorf("保存配置失败: %w", err)
+	// Write mode
+	if setBaseURL != "" || setLang != "" {
+		if setLang != "" && setLang != "en" && setLang != "zh" {
+			return fmt.Errorf(i18n.T(
+				"unsupported language %q, use: en | zh",
+				"不支持的语言 %q，可选: en | zh",
+			), setLang)
 		}
-		fmt.Fprintf(stdout, "✓ BaseURL 已设置为: %s\n", setBaseURL)
+
+		profile, _ := config.LoadProfile()
+		if setBaseURL != "" {
+			profile.BaseURL = setBaseURL
+		}
+		if setLang != "" {
+			profile.Lang = setLang
+		}
+		if err := config.SaveProfile(profile); err != nil {
+			return fmt.Errorf(i18n.T("failed to save config: %w", "保存配置失败: %w"), err)
+		}
+		if setBaseURL != "" {
+			fmt.Fprintf(stdout, i18n.T("✓ BaseURL set to: %s\n", "✓ BaseURL 已设置为: %s\n"), setBaseURL)
+		}
+		if setLang != "" {
+			// Apply immediately so the confirmation itself uses the new lang.
+			i18n.SetLang(setLang)
+			fmt.Fprintf(stdout, i18n.T("✓ Language set to: %s\n", "✓ 语言已设置为: %s\n"), setLang)
+		}
 		return nil
 	}
 
-	// 查看模式
+	// Read mode
 	profile, err := config.LoadProfile()
 	if err != nil {
-		return fmt.Errorf("加载配置失败: %w", err)
+		return fmt.Errorf(i18n.T("failed to load config: %w", "加载配置失败: %w"), err)
 	}
 
-	// 优先使用环境变量，其次配置文件，最后默认值
 	baseURL, _ := resolveBaseURL("")
 	if profile.BaseURL != "" {
 		baseURL = profile.BaseURL
 	}
-	fmt.Fprintf(stdout, "BaseURL: %s\n", baseURL)
+	lang := profile.Lang
+	if lang == "" {
+		lang = "en"
+	}
+
+	fmt.Fprintf(stdout, i18n.T("BaseURL:  %s\n", "BaseURL:  %s\n"), baseURL)
+	fmt.Fprintf(stdout, i18n.T("Language: %s\n", "语言:     %s\n"), lang)
 	if profile.APIKey != "" {
-		fmt.Fprintf(stdout, "API Key: %s...\n", profile.APIKey[:8])
+		fmt.Fprintf(stdout, i18n.T("API Key:  %s...\n", "API Key:  %s...\n"), profile.APIKey[:8])
 	} else {
-		fmt.Fprintln(stdout, "API Key: (未设置)")
+		fmt.Fprintln(stdout, i18n.T("API Key:  (not set)", "API Key:  (未设置)"))
 	}
 	return nil
 }
 
 func runGenerateSkills(ctx context.Context, args []string, stdout, stderr io.Writer) error {
-	fmt.Fprintln(stdout, "Skills 生成器（待实现）")
+	fmt.Fprintln(stdout, i18n.T("Skills generator (not implemented yet)", "Skills 生成器（待实现）"))
 	return nil
 }
 
@@ -299,7 +414,6 @@ func resolveBaseURL(baseURLArg string) (string, error) {
 	if envURL := os.Getenv("TIER0_BASE_URL"); envURL != "" {
 		return strings.TrimRight(envURL, "/"), nil
 	}
-	// 最后读取配置文件中的 baseURL
 	profile, _ := config.LoadProfile()
 	if profile.BaseURL != "" {
 		return strings.TrimRight(profile.BaseURL, "/"), nil

@@ -130,12 +130,34 @@ tier0 flow list --debug
 tier0 config
 ```
 
-## 环境变量
+## 语言 / Language
 
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `TIER0_BASE_URL` | 平台地址 | `https://tier0.dev` |
-| `TIER0_API_KEY` | API Key（优先级高于配置文件） | - |
+The CLI defaults to **English**. Switch to Chinese with:
+
+```bash
+# Persist to config file
+tier0 config --lang zh
+
+# One-off override via environment variable
+TIER0_LANG=zh tier0 flow list
+```
+
+Switch back to English:
+
+```bash
+tier0 config --lang en
+```
+
+The active language is stored in `~/.tier0/config.json` as `"lang": "zh"` (mirrors how `lark-cli` handles it).
+Priority: `TIER0_LANG` env var > config file > default (`en`).
+
+## 环境变量 / Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `TIER0_BASE_URL` | Platform base URL | `https://tier0.dev` |
+| `TIER0_API_KEY` | API Key (overrides config file) | — |
+| `TIER0_LANG` | UI language: `en` \| `zh` | `en` |
 
 ## 认证流程
 
