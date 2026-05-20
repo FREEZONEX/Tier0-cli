@@ -7,13 +7,15 @@ import (
 	"path/filepath"
 )
 
-// Profile 用户配置
+// Profile holds all persistent CLI settings.
 type Profile struct {
 	BaseURL string `json:"baseURL"`
 	APIKey  string `json:"apiKey"`
+	// Lang controls the CLI output language: "en" (default) or "zh".
+	Lang string `json:"lang,omitempty"`
 }
 
-// configDir 返回配置文件目录
+// configDir returns the configuration directory path.
 func configDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -22,19 +24,19 @@ func configDir() string {
 	return filepath.Join(home, ".tier0")
 }
 
-// configFile 返回配置文件路径
+// configFile returns the configuration file path.
 func configFile() string {
 	return filepath.Join(configDir(), "config.json")
 }
 
-// SaveProfile 保存配置到文件（逐字段 merge，避免覆盖其他字段）
+// SaveProfile persists the profile to disk, merging non-zero fields
+// with the existing configuration to avoid overwriting unrelated settings.
 func SaveProfile(profile Profile) error {
 	dir := configDir()
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("创建配置目录失败: %w", err)
+		return fmt.Errorf("failed to create config dir: %w", err)
 	}
 
-	// 先读取现有配置，然后逐字段 merge
 	existing, _ := LoadProfile()
 	if profile.BaseURL != "" {
 		existing.BaseURL = profile.BaseURL
@@ -42,19 +44,25 @@ func SaveProfile(profile Profile) error {
 	if profile.APIKey != "" {
 		existing.APIKey = profile.APIKey
 	}
+	// Lang is updated even when set to empty string (allows reset).
+	// Use the sentinel value "-" is not needed; callers set Lang explicitly.
+	if profile.Lang != "" {
+		existing.Lang = profile.Lang
+	}
 
 	data, err := json.MarshalIndent(existing, "", "  ")
 	if err != nil {
-		return fmt.Errorf("序列化配置失败: %w", err)
+		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
 	if err := os.WriteFile(configFile(), data, 0600); err != nil {
-		return fmt.Errorf("写入配置失败: %w", err)
+		return fmt.Errorf("failed to write config: %w", err)
 	}
 	return nil
 }
 
-// LoadProfile 从文件加载配置
+// LoadProfile reads the profile from disk.
+// Missing file returns an empty Profile without error.
 func LoadProfile() (Profile, error) {
 	var profile Profile
 
@@ -63,11 +71,11 @@ func LoadProfile() (Profile, error) {
 		if os.IsNotExist(err) {
 			return profile, nil
 		}
-		return profile, fmt.Errorf("读取配置失败: %w", err)
+		return profile, fmt.Errorf("failed to read config: %w", err)
 	}
 
 	if err := json.Unmarshal(data, &profile); err != nil {
-		return profile, fmt.Errorf("解析配置失败: %w", err)
+		return profile, fmt.Errorf("failed to parse config: %w", err)
 	}
 	return profile, nil
 }
