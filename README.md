@@ -75,6 +75,55 @@ tier0 api /openapi/v1/uns/read --body '{"topics":["demo"]}'
 tier0 api /openapi/v1/uns/browse --body '{"path":"/"}'
 ```
 
+### 管理 Flow（Node-RED）
+
+每个 Workspace 包含两类 Node-RED 容器，通过 `tier0 flow` 子命令统一管理：
+
+| 类型 | 说明 |
+|------|------|
+| `SourceFlow` | 连接协议采集数据并发布 MQTT |
+| `EventFlow`  | 对业务数据进行二次处理 |
+
+```bash
+# 列出所有 Flow
+tier0 flow list
+
+# 只看 SourceFlow / EventFlow
+tier0 flow list --source
+tier0 flow list --event
+
+# 按名称关键词过滤，JSON 输出
+tier0 flow list --keyword "modbus" --json
+
+# 查看 Flow 详情
+tier0 flow get --id 1
+
+# 创建 Flow
+tier0 flow create --name "modbus-collector" --source --desc "Modbus 数据采集"
+tier0 flow create --name "alert-handler"    --event
+
+# 更新 Flow（名称、描述、收藏）
+tier0 flow update --id 1 --name "new-name" --favorite
+
+# 删除 Flow（支持多个 ID）
+tier0 flow delete --id 1 --id 2
+tier0 flow delete 1,2,3
+
+# 导出 Node-RED 画布 JSON 到文件
+tier0 flow data --id 1 --out flows.json
+
+# 部署 Node-RED 画布（从文件，推荐）
+tier0 flow deploy --id 1 -f flows.json
+
+# 部署 Node-RED 画布（内联 JSON）
+tier0 flow deploy --id 1 --flows-json '[{"id":"abc","type":"tab","label":"Flow 1"}]'
+
+# 所有子命令均支持 --debug 查看 HTTP 详情
+tier0 flow list --debug
+```
+
+运行 `tier0 flow help` 查看完整选项说明。
+
 ### 查看配置
 
 ```bash
