@@ -13,6 +13,7 @@ import (
 	"github.com/FREEZONEX/Tier0-cli/internal/apierr"
 	"github.com/FREEZONEX/Tier0-cli/internal/client"
 	"github.com/FREEZONEX/Tier0-cli/internal/config"
+	"github.com/FREEZONEX/Tier0-cli/internal/highrisk"
 	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
 	"github.com/FREEZONEX/Tier0-cli/internal/notice"
 )
@@ -394,7 +395,7 @@ func runFlowUpdate(ctx context.Context, args []string, stdout, stderr io.Writer,
 
 func runFlowDelete(ctx context.Context, args []string, stdout, stderr io.Writer, checker *notice.Checker) error {
 	var ids []int64
-	var jsonOutput, debug bool
+	var jsonOutput, debug, confirmed bool
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -404,6 +405,8 @@ func runFlowDelete(ctx context.Context, args []string, stdout, stderr io.Writer,
 				ids = append(ids, n)
 				i++
 			}
+		case "--yes", "-y":
+			confirmed = true
 		case "--json":
 			jsonOutput = true
 		case "--debug":
@@ -427,6 +430,15 @@ func runFlowDelete(ctx context.Context, args []string, stdout, stderr io.Writer,
 			"specify at least one Flow ID via --id <id> or as positional arguments (comma-separated)",
 			"请通过 --id <id> 或直接传入 ID（支持多个，逗号分隔）指定要删除的 Flow",
 		))
+	}
+
+	// High-risk gate: deleting a Flow stops the Node-RED container and is irreversible.
+	summary := i18n.T(
+		fmt.Sprintf("Delete Flow(s) %v — this will STOP the Node-RED container(s) and cannot be undone.", ids),
+		fmt.Sprintf("删除 Flow %v — 将停止对应的 Node-RED 容器，操作不可逆。", ids),
+	)
+	if err := highrisk.Guard(confirmed, "flow delete", summary); err != nil {
+		return err
 	}
 
 	body, _ := json.Marshal(map[string][]int64{"ids": ids})
@@ -507,7 +519,7 @@ func runFlowData(ctx context.Context, args []string, stdout, stderr io.Writer, c
 func runFlowDeploy(ctx context.Context, args []string, stdout, stderr io.Writer, checker *notice.Checker) error {
 	var id int64
 	var flowsJSON string
-	var jsonOutput, debug bool
+	var jsonOutput, debug, confirmed bool
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -531,6 +543,8 @@ func runFlowDeploy(ctx context.Context, args []string, stdout, stderr io.Writer,
 				flowsJSON = string(raw)
 				i++
 			}
+		case "--yes", "-y":
+			confirmed = true
 		case "--json":
 			jsonOutput = true
 		case "--debug":
@@ -554,6 +568,15 @@ func runFlowDeploy(ctx context.Context, args []string, stdout, stderr io.Writer,
 			"provide Node-RED canvas JSON via --flows-json '<json>' or --flows-file <file>",
 			"请通过 --flows-json '<json>' 或 --flows-file <file> 提供 Node-RED 画布数据",
 		))
+	}
+
+	// High-risk gate: deploy replaces ALL Node-RED nodes — existing configuration is overwritten.
+	summary := i18n.T(
+		fmt.Sprintf("Deploy canvas to Flow %d — ALL existing Node-RED nodes will be REPLACED. Back up with 'tier0 flow data --id %d --out backup.json' first.", id, id),
+		fmt.Sprintf("部署画布到 Flow %d — 将替换该 Node-RED 实例的所有节点配置。建议先执行 'tier0 flow data --id %d --out backup.json' 备份。", id, id),
+	)
+	if err := highrisk.Guard(confirmed, "flow deploy", summary); err != nil {
+		return err
 	}
 
 	payload := map[string]interface{}{
@@ -668,6 +691,7 @@ func printFlowHelp(w io.Writer) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, i18n.T("Flags (delete):", "选项 (delete):"))
 	fmt.Fprintln(w, i18n.T("  --id <id>                 Flow ID (repeatable for multiple)", "  --id <id>                 Flow ID（可重复指定多个）"))
+	fmt.Fprintln(w, i18n.T("  --yes, -y                 Confirm high-risk operation (required)", "  --yes, -y                 确认高风险操作（必填）"))
 	fmt.Fprintln(w, i18n.T("  --json                    Output as JSON", "  --json                    以 JSON 格式输出"))
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, i18n.T("Flags (data):", "选项 (data):"))
@@ -678,6 +702,7 @@ func printFlowHelp(w io.Writer) {
 	fmt.Fprintln(w, i18n.T("  --id <id>                 Flow ID (required)", "  --id <id>                 Flow ID（必填）"))
 	fmt.Fprintln(w, i18n.T("  --flows-json '<json>'     Node-RED canvas JSON string", "  --flows-json '<json>'     Node-RED 画布 JSON 字符串"))
 	fmt.Fprintln(w, i18n.T("  --flows-file, -f <file>   Read Node-RED canvas JSON from file (recommended)", "  --flows-file, -f <file>   从文件读取 Node-RED 画布 JSON（推荐）"))
+	fmt.Fprintln(w, i18n.T("  --yes, -y                 Confirm high-risk operation (required)", "  --yes, -y                 确认高风险操作（必填）"))
 	fmt.Fprintln(w, i18n.T("  --json                    Output as JSON", "  --json                    以 JSON 格式输出"))
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, i18n.T("Common flags:", "通用选项:"))

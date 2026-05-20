@@ -1,6 +1,6 @@
 {
   "name": "@freezonex/tier0-cli",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Tier0 CLI — Unified Namespace data platform command line tool",
   "bin": {
     "tier0": "./bin/tier0"
