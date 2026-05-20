@@ -33,6 +33,8 @@ func Execute() error {
 		return runConfig(ctx, args[1:], os.Stdout, os.Stderr)
 	case "generate-skills":
 		return runGenerateSkills(ctx, args[1:], os.Stdout, os.Stderr)
+	case "flow":
+		return runFlow(ctx, args[1:], os.Stdout, os.Stderr)
 	case "skills":
 		return runSkills(ctx, args[1:], os.Stdout, os.Stderr)
 	case "upgrade":
@@ -58,6 +60,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "命令:")
 	fmt.Fprintln(w, "  login             Device Flow 登录授权")
 	fmt.Fprintln(w, "  api <endpoint>    调用 API 接口")
+	fmt.Fprintln(w, "  flow              管理 Node-RED Flow（list/get/create/update/delete/data/deploy）")
 	fmt.Fprintln(w, "  config            查看/管理配置")
 	fmt.Fprintln(w, "  skills            管理 Skills（list/update/version）")
 	fmt.Fprintln(w, "  upgrade           升级 CLI 到最新版本")
@@ -76,6 +79,9 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  tier0 api /openapi/v1/uns/read --body '{\"topics\":[\"demo\"]}'")
 	fmt.Fprintln(w, "  tier0 api /openapi/v1/uns/write --body-file body.json")
 	fmt.Fprintln(w, "  tier0 api /openapi/v1/uns/browse --body '{\"path\":\"/\"}' --debug")
+	fmt.Fprintln(w, "  tier0 flow list --source")
+	fmt.Fprintln(w, "  tier0 flow create --name my-source --source")
+	fmt.Fprintln(w, "  tier0 flow deploy --id 1 -f flows.json")
 }
 
 func runLogin(ctx context.Context, args []string, stdout, stderr io.Writer) error {
