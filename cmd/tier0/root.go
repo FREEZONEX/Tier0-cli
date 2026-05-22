@@ -37,6 +37,8 @@ func Execute() error {
 		return runLogin(ctx, args[1:], os.Stdout, os.Stderr)
 	case "api":
 		return runAPI(ctx, args[1:], os.Stdout, os.Stderr)
+	case "uns":
+		return runUNS(ctx, args[1:], os.Stdout, os.Stderr)
 	case "flow":
 		return runFlow(ctx, args[1:], os.Stdout, os.Stderr)
 	case "config":
@@ -88,8 +90,12 @@ func printUsage(w io.Writer) {
 		"  login             Device Flow 登录授权",
 	))
 	fmt.Fprintln(w, i18n.T(
-		"  api <endpoint>    Call an API endpoint directly",
-		"  api <endpoint>    直接调用 API 接口",
+		"  api <endpoint>    Call an API endpoint directly (raw)",
+		"  api <endpoint>    直接调用 API 接口（裸调）",
+	))
+	fmt.Fprintln(w, i18n.T(
+		"  uns               Manage UNS nodes and data (browse/read/write/search/history/...)",
+		"  uns               管理 UNS 节点与数据（browse/read/write/search/history/...）",
 	))
 	fmt.Fprintln(w, i18n.T(
 		"  flow              Manage Node-RED Flows (list/get/create/update/delete/data/deploy)",
@@ -135,9 +141,10 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  tier0 config --lang zh")
 	fmt.Fprintln(w, "  tier0 login")
 	fmt.Fprintln(w, "  tier0 login --no-wait")
-	fmt.Fprintln(w, "  tier0 api /openapi/v1/uns/read --body '{\"topics\":[\"demo\"]}'")
-	fmt.Fprintln(w, "  tier0 api /openapi/v1/uns/write --body-file body.json")
-	fmt.Fprintln(w, "  tier0 api /openapi/v1/uns/browse --body '{\"path\":\"/\"}' --debug")
+	fmt.Fprintln(w, "  tier0 uns browse")
+	fmt.Fprintln(w, "  tier0 uns read Plant/Line1/Metric/Temperature")
+	fmt.Fprintln(w, `  tier0 uns write --topic Plant/Line1/Metric/Temperature --value '{"temp":27.5}'`)
+	fmt.Fprintln(w, "  tier0 uns search --keyword temp --type thing")
 	fmt.Fprintln(w, "  tier0 flow list --source")
 	fmt.Fprintln(w, "  tier0 flow create --name my-source --source")
 	fmt.Fprintln(w, "  tier0 flow deploy --id 1 -f flows.json")
