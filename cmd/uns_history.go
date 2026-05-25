@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
 	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
 	"github.com/FREEZONEX/Tier0-cli/internal/notice"
@@ -75,9 +77,11 @@ func runUnsHistory(cmd *cobra.Command, args []string) error {
 	}
 
 	stdout := cmd.OutOrStdout()
-	checker.Emit(resp, jsonMode, stdout, cmd.ErrOrStderr())
-	if !jsonMode {
-		stdout.Write([]byte(resp + "\n"))
+	if jsonMode {
+		checker.Emit(resp, true, stdout, cmd.ErrOrStderr())
+	} else {
+		fmt.Fprintln(stdout, resp)
+		checker.Emit("", false, stdout, cmd.ErrOrStderr())
 	}
 	return nil
 }

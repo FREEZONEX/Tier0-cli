@@ -89,7 +89,7 @@ func runFlowDeploy(cmd *cobra.Command, args []string) error {
 	var result struct {
 		FlowId string `json:"flowId"`
 	}
-	if err := json.Unmarshal([]byte(resp), &result); err != nil {
+	if err := json.Unmarshal([]byte(cmdutil.ExtractData(resp)), &result); err != nil {
 		fmt.Fprintln(stdout, resp)
 		checker.Emit("", false, stdout, cmd.ErrOrStderr())
 		return nil

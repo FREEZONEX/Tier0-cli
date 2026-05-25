@@ -94,7 +94,7 @@ func runFlowCreate(cmd *cobra.Command, args []string) error {
 	var result struct {
 		Id int64 `json:"id"`
 	}
-	if err := json.Unmarshal([]byte(resp), &result); err != nil {
+	if err := json.Unmarshal([]byte(cmdutil.ExtractData(resp)), &result); err != nil {
 		fmt.Fprintln(stdout, resp)
 		checker.Emit("", false, stdout, cmd.ErrOrStderr())
 		return nil

@@ -82,3 +82,17 @@ func JSONString(v any) string {
 	}
 	return string(b)
 }
+
+// ExtractData unwraps the standard backend envelope {"code":N,"msg":"...","data":{...}}
+// and returns the raw JSON of the "data" field.
+// If the response has no "data" field the original string is returned unchanged,
+// so callers that receive a flat response still work correctly.
+func ExtractData(resp string) string {
+	var envelope struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(resp), &envelope); err == nil && len(envelope.Data) > 0 {
+		return string(envelope.Data)
+	}
+	return resp
+}
