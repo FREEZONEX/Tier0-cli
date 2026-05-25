@@ -23,7 +23,7 @@ var unsHistoryCmd = &cobra.Command{
 }
 
 func init() {
-	unsHistoryCmd.Flags().StringSliceP("topics", "t", nil,
+	unsHistoryCmd.Flags().StringSliceP("topic", "t", nil,
 		i18n.T("Topic name(s) (repeatable, required)", "点位名称（可重复指定，必填）"))
 	unsHistoryCmd.Flags().String("start", "",
 		i18n.T("Start time: relative (-1h/-30m/-7d), ISO 8601, or 'now' (required)", "起始时间：相对(-1h/-30m/-7d)、ISO 8601 或 now（必填）"))
@@ -39,7 +39,7 @@ func init() {
 		i18n.T("Aggregation function (avg/max/min/sum/count)", "聚合函数（avg/max/min/sum/count）"))
 	unsHistoryCmd.Flags().String("field", "",
 		i18n.T("Aggregation field name", "聚合字段名"))
-	unsHistoryCmd.MarkFlagRequired("topics")
+	unsHistoryCmd.MarkFlagRequired("topic")
 	unsHistoryCmd.MarkFlagRequired("start")
 }
 
@@ -104,7 +104,7 @@ func runUnsHistory(cmd *cobra.Command, args []string) error {
 	checker := notice.Start()
 	jsonMode, _ := cmd.Flags().GetBool("json")
 	debug, _ := cmd.Flags().GetBool("debug")
-	topics, _ := cmd.Flags().GetStringSlice("topics")
+	topics, _ := cmd.Flags().GetStringSlice("topic")
 	startExpr, _ := cmd.Flags().GetString("start")
 	endExpr, _ := cmd.Flags().GetString("end")
 	page, _ := cmd.Flags().GetInt("page")
