@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/FREEZONEX/Tier0-cli/cmd/tier0"
+	"github.com/FREEZONEX/Tier0-cli/cmd"
 	"github.com/FREEZONEX/Tier0-cli/internal/highrisk"
 )
 
 func main() {
-	if err := tier0.Execute(); err != nil {
+	if err := cmd.Execute(); err != nil {
 		var hre *highrisk.HighRiskError
 		if errors.As(err, &hre) {
 			highrisk.WriteEnvelope(os.Stderr, hre)

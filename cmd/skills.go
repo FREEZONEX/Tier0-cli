@@ -1,46 +1,59 @@
-package tier0
+package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
 	"github.com/FREEZONEX/Tier0-cli/internal/upgrade"
 	"github.com/FREEZONEX/Tier0-cli/internal/version"
+	"github.com/spf13/cobra"
 )
 
-func runSkills(ctx context.Context, args []string, stdout, stderr io.Writer) error {
-	if len(args) == 0 {
-		printSkillsHelp(stdout)
-		return nil
-	}
-
-	switch args[0] {
-	case "list", "ls":
-		return runSkillsList(ctx, args[1:], stdout, stderr)
-	case "update", "upgrade":
-		return runSkillsUpdate(ctx, args[1:], stdout, stderr)
-	case "version", "ver":
-		return runSkillsVersion(ctx, args[1:], stdout, stderr)
-	case "-h", "--help", "help":
-		printSkillsHelp(stdout)
-		return nil
-	default:
-		fmt.Fprintf(stderr, i18n.T("unknown skills subcommand: %s\n", "未知 skills 子命令: %s\n"), args[0])
-		printSkillsHelp(stderr)
-		return fmt.Errorf("unknown skills subcommand: %s", args[0])
-	}
+var skillsCmd = &cobra.Command{
+	Use:   "skills",
+	Short: i18n.T("Manage Skills (list/update/version)", "管理 Skills（list/update/version）"),
+	Long: i18n.T(
+		"Manage locally installed AI agent skills. List, update, or check version.",
+		"管理本地安装的 AI Agent Skills。支持列出、升级和查看版本。",
+	),
 }
 
-func runSkillsList(ctx context.Context, args []string, stdout, stderr io.Writer) error {
-	jsonOutput := false
-	for _, arg := range args {
-		if arg == "--json" {
-			jsonOutput = true
-		}
-	}
+func init() {
+	skillsCmd.AddCommand(skillsListCmd)
+	skillsCmd.AddCommand(skillsUpdateCmd)
+	skillsCmd.AddCommand(skillsVersionCmd)
+}
+
+var skillsListCmd = &cobra.Command{
+	Use:     "list",
+	Aliases: []string{"ls"},
+	Short:   i18n.T("List installed skills", "列出已安装的 skills"),
+	RunE:    runSkillsList,
+}
+
+var skillsUpdateCmd = &cobra.Command{
+	Use:     "update",
+	Aliases: []string{"upgrade"},
+	Short:   i18n.T("Upgrade skills to the latest version", "升级 skills 到最新版本"),
+	RunE:    runSkillsUpdate,
+}
+
+var skillsVersionCmd = &cobra.Command{
+	Use:     "version",
+	Aliases: []string{"ver"},
+	Short:   i18n.T("Show skills version info", "查看 skills 版本信息"),
+	RunE:    runSkillsVersion,
+}
+
+func init() {
+	skillsUpdateCmd.Flags().Bool("dry-run", false,
+		i18n.T("Check for updates without installing", "只检查更新，不安装"))
+}
+
+func runSkillsList(cmd *cobra.Command, args []string) error {
+	jsonMode, _ := cmd.Flags().GetBool("json")
+	stdout := cmd.OutOrStdout()
 
 	skillsDir := upgrade.GetDefaultSkillsDir()
 	result, err := upgrade.ListSkills(skillsDir)
@@ -48,7 +61,7 @@ func runSkillsList(ctx context.Context, args []string, stdout, stderr io.Writer)
 		return fmt.Errorf(i18n.T("failed to list skills: %w", "列出 skills 失败: %w"), err)
 	}
 
-	if jsonOutput {
+	if jsonMode {
 		output, _ := json.MarshalIndent(result, "", "  ")
 		fmt.Fprintln(stdout, string(output))
 		return nil
@@ -75,17 +88,10 @@ func runSkillsList(ctx context.Context, args []string, stdout, stderr io.Writer)
 	return nil
 }
 
-func runSkillsUpdate(ctx context.Context, args []string, stdout, stderr io.Writer) error {
-	dryRun := false
-	jsonOutput := false
-	for _, arg := range args {
-		switch arg {
-		case "--dry-run":
-			dryRun = true
-		case "--json":
-			jsonOutput = true
-		}
-	}
+func runSkillsUpdate(cmd *cobra.Command, args []string) error {
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	jsonMode, _ := cmd.Flags().GetBool("json")
+	stdout := cmd.OutOrStdout()
 
 	if version.IsDev() {
 		fmt.Fprintln(stdout, i18n.T(
@@ -97,14 +103,12 @@ func runSkillsUpdate(ctx context.Context, args []string, stdout, stderr io.Write
 
 	skillsDir := upgrade.GetDefaultSkillsDir()
 	if skillsDir == "" {
-		// No existing skills dir found — fall back to ~/.tier0/skills so
-		// UpdateSkills can create it and pull from the Tier0-skill repo.
 		skillsDir = upgrade.FallbackSkillsDir()
 	}
 
 	result, err := upgrade.UpdateSkills(skillsDir, dryRun)
 	if err != nil {
-		if jsonOutput {
+		if jsonMode {
 			output, _ := json.MarshalIndent(result, "", "  ")
 			fmt.Fprintln(stdout, string(output))
 		} else {
@@ -113,7 +117,7 @@ func runSkillsUpdate(ctx context.Context, args []string, stdout, stderr io.Write
 		return err
 	}
 
-	if jsonOutput {
+	if jsonMode {
 		output, _ := json.MarshalIndent(result, "", "  ")
 		fmt.Fprintln(stdout, string(output))
 		return nil
@@ -144,19 +148,15 @@ func runSkillsUpdate(ctx context.Context, args []string, stdout, stderr io.Write
 	return nil
 }
 
-func runSkillsVersion(ctx context.Context, args []string, stdout, stderr io.Writer) error {
-	jsonOutput := false
-	for _, arg := range args {
-		if arg == "--json" {
-			jsonOutput = true
-		}
-	}
+func runSkillsVersion(cmd *cobra.Command, args []string) error {
+	jsonMode, _ := cmd.Flags().GetBool("json")
+	stdout := cmd.OutOrStdout()
 
 	skillsDir := upgrade.GetDefaultSkillsDir()
 	skillsVersion := upgrade.GetSkillsVersion(skillsDir)
 	lastUpdated := upgrade.SkillsLastUpdated(skillsDir)
 
-	if jsonOutput {
+	if jsonMode {
 		output := fmt.Sprintf(`{"version": %q, "updatedAt": %q}`, skillsVersion, lastUpdated)
 		fmt.Fprintln(stdout, output)
 		return nil
@@ -173,23 +173,4 @@ func runSkillsVersion(ctx context.Context, args []string, stdout, stderr io.Writ
 	}
 	fmt.Fprintf(stdout, i18n.T("Path:           %s\n", "路径: %s\n"), skillsDir)
 	return nil
-}
-
-func printSkillsHelp(w io.Writer) {
-	fmt.Fprintln(w, i18n.T("Usage: tier0 skills <subcommand> [flags]", "用法: tier0 skills <子命令> [选项]"))
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, i18n.T("Subcommands:", "子命令:"))
-	fmt.Fprintln(w, i18n.T("  list, ls         List installed skills", "  list, ls        列出已安装的 skills"))
-	fmt.Fprintln(w, i18n.T("  update, upgrade  Upgrade skills to the latest version", "  update, upgrade  升级 skills 到最新版本"))
-	fmt.Fprintln(w, i18n.T("  version, ver     Show skills version info", "  version, ver     查看 skills 版本信息"))
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, i18n.T("Flags:", "选项:"))
-	fmt.Fprintln(w, i18n.T("  --json           Output as JSON", "  --json           以 JSON 格式输出"))
-	fmt.Fprintln(w, i18n.T("  --dry-run        Check for updates without installing (update only)", "  --dry-run        只检查更新，不安装（仅 update）"))
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, i18n.T("Examples:", "示例:"))
-	fmt.Fprintln(w, i18n.T("  tier0 skills list              list all installed skills", "  tier0 skills list              列出所有已安装的 skills"))
-	fmt.Fprintln(w, i18n.T("  tier0 skills update --dry-run  check for skills updates", "  tier0 skills update --dry-run  检查 skills 是否有更新"))
-	fmt.Fprintln(w, i18n.T("  tier0 skills update            upgrade skills to latest", "  tier0 skills update            升级 skills 到最新版本"))
-	fmt.Fprintln(w, i18n.T("  tier0 skills version           show skills version", "  tier0 skills version           查看 skills 版本"))
 }
