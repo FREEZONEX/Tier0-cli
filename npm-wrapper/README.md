@@ -1,17 +1,22 @@
-# @freezonex/tier0-cli
+# @tier0/cli
 
 Tier0 CLI npm wrapper — 无需手动下载，一行命令即用。
 
 ## 安装
 
-**全局安装（推荐）：**
+**一行安装（推荐）：**
 ```bash
-npm install -g @freezonex/tier0-cli
+npx @tier0/cli@latest install
+```
+
+**全局安装：**
+```bash
+npm install -g @tier0/cli
 ```
 
 **不安装直接运行（npx）：**
 ```bash
-npx @freezonex/tier0-cli login
+npx @tier0/cli@latest login
 ```
 
 ## 使用
@@ -34,7 +39,7 @@ tier0 api /openapi/v1/uns/browse --body '{path:/}'
 
 **Windows (PowerShell)：**
 ```powershell
-npm install -g @freezonex/tier0-cli
+npx @tier0/cli@latest install
 
 # 立即可用，无需重启终端
 tier0 version
@@ -42,6 +47,6 @@ tier0 version
 
 ## 机制
 
-- 首次运行时会自动检测平台并从 [GitHub Release](https://github.com/FREEZONEX/Tier0-cli/releases) 下载对应的 Go 二进制
+- `npx @tier0/cli@latest install` 会从 [GitHub Release](https://github.com/FREEZONEX/Tier0-cli/releases) 下载最新 Go 二进制并安装到 `~/.tier0/bin/`
 - 二进制缓存到 `~/.tier0/bin/`，后续调用直接使用本地缓存
 - 支持 Linux、macOS、Windows（x86_64 / arm64）

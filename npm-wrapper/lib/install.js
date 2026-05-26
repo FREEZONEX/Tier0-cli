@@ -122,13 +122,13 @@ function extractTarGz(tarPath, destDir) {
   }
 }
 
-async function install() {
+async function install({ force = false } = {}) {
   const plat = platformName();
   const version = await getLatestVersion();
   const binPath = path.join(BIN_DIR, binaryName());
 
-  // Check if already installed and up to date
-  if (fs.existsSync(binPath) && fs.existsSync(VERSION_FILE)) {
+  // Check if already installed and up to date (skip when force=true)
+  if (!force && fs.existsSync(binPath) && fs.existsSync(VERSION_FILE)) {
     const current = fs.readFileSync(VERSION_FILE, 'utf8').trim();
     if (current === version) {
       console.log(`tier0 ${version} already installed.`);

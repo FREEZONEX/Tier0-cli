@@ -4,12 +4,18 @@ Tier0 平台命令行工具。
 
 ## 安装
 
-### 方式一：npm 安装（推荐，跨平台）
+### 方式一：npm / npx（推荐，跨平台）
 
 需要 Node.js >= 16。
 
+**一行安装（推荐）：**
 ```bash
-npm install -g @freezonex/tier0-cli
+npx @tier0/cli@latest install
+```
+
+**全局安装（安装后直接使用 `tier0` 命令）：**
+```bash
+npm install -g @tier0/cli
 ```
 
 **特点**：
@@ -17,9 +23,9 @@ npm install -g @freezonex/tier0-cli
 - 无需 sudo、无需重启终端
 - 支持 Linux / macOS / Windows
 
-**npx 方式（不安装，直接运行）：**
+**npx 直接运行（无需全局安装）：**
 ```bash
-npx @freezonex/tier0-cli login
+npx @tier0/cli@latest login
 ```
 
 ### 方式二：一键脚本

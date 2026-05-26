@@ -222,19 +222,26 @@ release_github() {
   local repo="FREEZONEX/Tier0-cli"
   echo "[github] 创建 Release: ${VERSION} ..."
 
-  local release_resp
-  release_resp=$(curl -s -X POST \
+  echo "[github] GITHUB_TOKEN 前8位: ${GITHUB_TOKEN:0:8}..."
+
+  local release_resp http_code
+  release_resp=$(curl -s -w "\n__HTTP_CODE__:%{http_code}" -X POST \
     -H "Authorization: token ${GITHUB_TOKEN}" \
     -H "Accept: application/vnd.github.v3+json" \
     "https://api.github.com/repos/${repo}/releases" \
-    -d "{\"tag_name\":\"${VERSION}\",\"name\":\"tier0-cli ${VERSION}\",\"body\":\"Tier0 CLI ${VERSION} 跨平台发布\"}" 2>/dev/null)
+    -d "{\"tag_name\":\"${VERSION}\",\"name\":\"tier0-cli ${VERSION}\",\"body\":\"Tier0 CLI ${VERSION} cross-platform release\"}" 2>&1)
+
+  http_code=$(echo "$release_resp" | grep '__HTTP_CODE__:' | cut -d: -f2)
+  release_resp=$(echo "$release_resp" | grep -v '__HTTP_CODE__:')
+
+  echo "[github] HTTP 状态码: ${http_code}"
+  echo "[github] API 响应: ${release_resp}"
 
   local upload_url
   upload_url=$(echo "$release_resp" | grep -o '"upload_url": "[^"]*' | cut -d'"' -f4 | sed 's/{?name,label}//')
 
   if [[ -z "$upload_url" ]]; then
-    echo "[github] 创建 Release 失败:"
-    echo "$release_resp" | head -5
+    echo "[github] 创建 Release 失败，upload_url 为空"
     return 1
   fi
 

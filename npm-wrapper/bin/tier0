@@ -6,7 +6,14 @@ const fs = require('fs');
 const { install, BIN_DIR, binaryName } = require('../lib/install');
 
 async function main() {
+  const args = process.argv.slice(2);
   const binPath = path.join(BIN_DIR, binaryName());
+
+  // `npx @tier0/cli@latest install` — explicit install/upgrade command
+  if (args[0] === 'install') {
+    await install({ force: true });
+    process.exit(0);
+  }
 
   // Check if binary exists, if not install it
   if (!fs.existsSync(binPath)) {
@@ -15,7 +22,7 @@ async function main() {
   }
 
   // Spawn the actual binary with all arguments
-  const child = spawn(binPath, process.argv.slice(2), {
+  const child = spawn(binPath, args, {
     stdio: 'inherit',
     shell: false,
   });
