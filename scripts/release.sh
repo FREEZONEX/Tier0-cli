@@ -222,30 +222,56 @@ release_github() {
   local repo="FREEZONEX/Tier0-cli"
   echo "[github] 创建 Release: ${VERSION} ..."
 
-  echo "[github] GITHUB_TOKEN 前8位: ${GITHUB_TOKEN:0:8}..."
-
   local release_resp http_code
   release_resp=$(curl -s -w "\n__HTTP_CODE__:%{http_code}" -X POST \
     -H "Authorization: token ${GITHUB_TOKEN}" \
     -H "Accept: application/vnd.github.v3+json" \
     "https://api.github.com/repos/${repo}/releases" \
-    -d "{\"tag_name\":\"${VERSION}\",\"name\":\"tier0-cli ${VERSION}\",\"body\":\"Tier0 CLI ${VERSION} cross-platform release\"}" 2>&1)
+    -d "{\"tag_name\":\"${VERSION}\",\"name\":\"tier0-cli ${VERSION}\",\"body\":\"Tier0 CLI ${VERSION} cross-platform release\"}")
 
   http_code=$(echo "$release_resp" | grep '__HTTP_CODE__:' | cut -d: -f2)
   release_resp=$(echo "$release_resp" | grep -v '__HTTP_CODE__:')
 
-  echo "[github] HTTP 状态码: ${http_code}"
-  echo "[github] API 响应: ${release_resp}"
-
   local upload_url
-  upload_url=$(echo "$release_resp" | grep -o '"upload_url": "[^"]*' | cut -d'"' -f4 | sed 's/{?name,label}//')
+  upload_url=$(echo "$release_resp" | grep -o '"upload_url":"[^"]*' | cut -d'"' -f4 | sed 's/{?name,label}//')
+  # 兼容带空格格式
+  if [[ -z "$upload_url" ]]; then
+    upload_url=$(echo "$release_resp" | grep -o '"upload_url": "[^"]*' | cut -d'"' -f4 | sed 's/{?name,label}//')
+  fi
+
+  # Release 已存在（422）→ 获取已有 Release 的 upload_url
+  if [[ -z "$upload_url" && "$http_code" == "422" ]]; then
+    echo "[github] Release ${VERSION} 已存在（HTTP 422），获取已有 Release..."
+    local existing_resp
+    existing_resp=$(curl -s \
+      -H "Authorization: token ${GITHUB_TOKEN}" \
+      -H "Accept: application/vnd.github.v3+json" \
+      "https://api.github.com/repos/${repo}/releases/tags/${VERSION}")
+    upload_url=$(echo "$existing_resp" | grep -o '"upload_url":"[^"]*' | cut -d'"' -f4 | sed 's/{?name,label}//')
+    if [[ -z "$upload_url" ]]; then
+      upload_url=$(echo "$existing_resp" | grep -o '"upload_url": "[^"]*' | cut -d'"' -f4 | sed 's/{?name,label}//')
+    fi
+    if [[ -n "$upload_url" ]]; then
+      echo "[github] 已找到现有 Release，追加上传资产..."
+    fi
+  fi
 
   if [[ -z "$upload_url" ]]; then
-    echo "[github] 创建 Release 失败，upload_url 为空"
+    echo "[github] 创建 Release 失败（HTTP ${http_code}）"
+    # 提取并显示 API 错误信息
+    local api_msg
+    api_msg=$(echo "$release_resp" | grep -o '"message":"[^"]*' | cut -d'"' -f4)
+    [[ -z "$api_msg" ]] && api_msg=$(echo "$release_resp" | grep -o '"message": "[^"]*' | cut -d'"' -f4)
+    [[ -n "$api_msg" ]] && echo "[github] 错误信息: ${api_msg}"
+    echo "[github] 常见原因："
+    echo "         401 — GITHUB_TOKEN 无效或过期"
+    echo "         403 — Token 缺少 repo/workflow 权限"
+    echo "         404 — 仓库不存在或 Token 无访问权限"
+    echo "         422 — 标签已存在 Release 且获取失败（请手动检查）"
     return 1
   fi
 
-  echo "[github] Release 创建成功，开始上传资产..."
+  echo "[github] Release 就绪，开始上传资产..."
 
   for asset in "${RELEASE_DIR}"/*; do
     local fname
@@ -278,33 +304,34 @@ release_npm() {
   fi
 
   # 同步 package.json 版本号（去掉 v 前缀）
+  # 注意：用 cd + 相对路径，避免 Git Bash 的 Unix 路径在 Windows Node.js 上解析错误
   local semver="${VERSION#v}"
   if command -v node >/dev/null 2>&1; then
-    node -e "
+    (cd "${npm_dir}" && node -e "
       const fs = require('fs');
-      const p = '${npm_dir}/package.json';
-      const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
+      const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
       pkg.version = '${semver}';
-      fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + '\n');
+      fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
       console.log('[npm] package.json version → ' + pkg.version);
-    "
+    ")
   else
     echo "[npm] 未找到 node，跳过版本号同步"
   fi
 
   # 检查 npm 登录态（需提前 npm login 或设置 NPM_TOKEN）
-  if [[ -n "${NPM_TOKEN:-}" ]]; then
-    echo "[npm] 使用 NPM_TOKEN 认证..."
-    echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > "${npm_dir}/.npmrc"
-  fi
-
+  # 全部操作在 cd 后的子 shell 里执行，避免路径转换问题
   echo "[npm] 发布 @tier0/cli@${semver} ..."
-  if (cd "${npm_dir}" && npm publish --access public 2>&1); then
+  if (
+    cd "${npm_dir}"
+    if [[ -n "${NPM_TOKEN:-}" ]]; then
+      echo "[npm] 使用 NPM_TOKEN 认证..."
+      echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc
+    fi
+    trap 'rm -f .npmrc' EXIT
+    npm publish --access public
+  ); then
     echo "[npm] 发布成功: https://www.npmjs.com/package/@tier0/cli"
-    # 清理临时 .npmrc
-    rm -f "${npm_dir}/.npmrc"
   else
-    rm -f "${npm_dir}/.npmrc"
     echo "[npm] 发布失败，请检查："
     echo "      1. npm 已登录（npm whoami）或已设置 NPM_TOKEN"
     echo "      2. 包名 @tier0/cli 的发布权限（需 @tier0 org 成员）"
