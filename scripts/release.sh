@@ -227,7 +227,7 @@ release_github() {
     -H "Authorization: token ${GITHUB_TOKEN}" \
     -H "Accept: application/vnd.github.v3+json" \
     "https://api.github.com/repos/${repo}/releases" \
-    -d "{\"tag_name\":\"${VERSION}\",\"name\":\"tier0-cli ${VERSION}\",\"body\":\"Tier0 CLI ${VERSION} cross-platform release\"}")
+    -d "{\"tag_name\":\"${VERSION}\",\"name\":\"tier0-cli ${VERSION}\",\"body\":\"## Tier0 CLI ${VERSION}\n\nSee [CHANGELOG](https://github.com/FREEZONEX/Tier0-cli#版本历史--changelog) for details.\n\n### Install\n\`\`\`bash\nnpx @tier0/cli@latest install\n\`\`\`\n\n### Upgrade\n\`\`\`bash\ntier0 upgrade\n\`\`\`\"}")
 
   http_code=$(echo "$release_resp" | grep '__HTTP_CODE__:' | cut -d: -f2)
   release_resp=$(echo "$release_resp" | grep -v '__HTTP_CODE__:')
