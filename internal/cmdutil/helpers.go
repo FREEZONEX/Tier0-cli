@@ -84,8 +84,15 @@ func JSONString(v any) string {
 }
 
 // CheckOK parses the standard backend envelope {"code":N,"msg":"..."} and returns
-// an error if code != 0. HTTP 200 responses with a non-zero code are business-logic
-// failures that DoAPI does not catch (it only checks HTTP status).
+// an error if the backend signals a business-logic failure.
+//
+// The backend (unitedrhino/go-zero convention) uses:
+//   - code 200  → success
+//   - code 0    → field absent / zero-valued, treat as success
+//   - anything else (400, 500, …) → failure
+//
+// HTTP-level errors (4xx/5xx status) are already handled by DoAPI; this catches
+// the cases where the server responds HTTP 200 but embeds an error in the body.
 func CheckOK(resp string) error {
 	var rv struct {
 		Code int    `json:"code"`
@@ -94,7 +101,7 @@ func CheckOK(resp string) error {
 	if err := json.Unmarshal([]byte(resp), &rv); err != nil {
 		return nil // not a standard envelope, assume OK
 	}
-	if rv.Code != 0 {
+	if rv.Code != 0 && rv.Code != 200 {
 		return apierr.New(rv.Code, resp)
 	}
 	return nil
