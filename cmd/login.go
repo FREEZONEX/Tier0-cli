@@ -82,10 +82,10 @@ func loginPoll(cmd *cobra.Command, baseURL, setupCode string, jsonMode bool, std
 			return
 		}
 		if pollErr != nil {
-			if current == 0 {
+			if current%6 == 0 {
 				fmt.Fprintf(stdout, i18n.T(
-					"\r  Polling... (%d/%d) Network hiccup, retrying...\n",
-					"\r  正在检测...（第 %d/%d 次）网络暂时不稳定，继续等待...\n",
+					"  Polling... (%d/%d) network hiccup, retrying...\n",
+					"  正在检测...（第 %d/%d 次）网络暂时不稳定，继续等待...\n",
 				), current+1, total)
 			}
 			return
@@ -93,8 +93,8 @@ func loginPoll(cmd *cobra.Command, baseURL, setupCode string, jsonMode bool, std
 		if current%6 == 0 && current > 0 {
 			remainingMin := (total - current) * 5 / 60
 			fmt.Fprintf(stdout, i18n.T(
-				"\r  Waiting for authorization... (check %d/%d, ~%d min remaining)",
-				"\r  正在等待授权...（第 %d/%d 次检测，剩余约 %d 分钟）",
+				"  Waiting for authorization... (check %d/%d, ~%d min remaining)\n",
+				"  正在等待授权...（第 %d/%d 次检测，剩余约 %d 分钟）\n",
 			), current+1, total, remainingMin)
 		}
 	})
