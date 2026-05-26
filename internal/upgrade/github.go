@@ -11,11 +11,12 @@ import (
 )
 
 const (
-	GitHubAPI   = "https://api.github.com"
-	RepoOwner   = "FREEZONEX"
-	RepoName    = "Tier0-cli"
-	NPMRegistry = "https://registry.npmjs.org"
-	NPMPackage  = "@tier0/cli"
+	GitHubAPI      = "https://api.github.com"
+	RepoOwner      = "FREEZONEX"
+	RepoName       = "Tier0-cli"
+	NPMRegistry    = "https://registry.npmjs.org"
+	NPMMirror      = "https://registry.npmmirror.com"
+	NPMPackage     = "@tier0/cli"
 )
 
 // Release 表示 GitHub Release 信息
@@ -60,28 +61,38 @@ func platformReleaseName() string {
 }
 
 // fetchLatestVersionNPM queries the npm registry for the latest published version.
-// This avoids GitHub API rate limits (60 req/h unauthenticated).
+// Tries npmjs.org first, falls back to npmmirror.com for users in China.
 func fetchLatestVersionNPM() (string, error) {
-	url := fmt.Sprintf("%s/%s/latest", NPMRegistry, NPMPackage)
-	client := &http.Client{Timeout: 10 * time.Second}
+	for _, registry := range []string{NPMRegistry, NPMMirror} {
+		ver, err := fetchVersionFromRegistry(registry)
+		if err == nil {
+			return ver, nil
+		}
+	}
+	return "", fmt.Errorf("无法从 npm registry 或 npmmirror 获取版本信息")
+}
+
+func fetchVersionFromRegistry(registry string) (string, error) {
+	url := fmt.Sprintf("%s/%s/latest", registry, NPMPackage)
+	client := &http.Client{Timeout: 8 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {
-		return "", fmt.Errorf("无法连接 npm registry: %w", err)
+		return "", err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("npm registry 返回状态码 %d", resp.StatusCode)
+		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
 	var pkg struct {
 		Version string `json:"version"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&pkg); err != nil {
-		return "", fmt.Errorf("解析 npm 版本信息失败: %w", err)
+		return "", err
 	}
 	if pkg.Version == "" {
-		return "", fmt.Errorf("npm registry 未返回版本号")
+		return "", fmt.Errorf("empty version")
 	}
 	return pkg.Version, nil
 }

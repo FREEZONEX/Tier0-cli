@@ -102,17 +102,23 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	via := result.Method
+	if via == "" {
+		via = "github"
+	}
 	fmt.Fprintf(stdout, i18n.T(
-		"✓ Upgraded: %s → %s\n",
-		"✓ 升级成功: %s → %s\n",
-	), result.CurrentVersion, result.LatestVersion)
+		"✓ Upgraded: %s → %s (via %s)\n",
+		"✓ 升级成功: %s → %s（通过 %s）\n",
+	), result.CurrentVersion, result.LatestVersion, via)
 	fmt.Fprintln(stdout, i18n.T(
 		"Please restart tier0 to use the new version.",
 		"请重新运行 tier0 以使用新版本。",
 	))
-	fmt.Fprintf(stdout, i18n.T(
-		"Old binary backed up to: %s\n",
-		"旧版本已备份至: %s\n",
-	), upgrade.BackupDir())
+	if via != "npm" {
+		fmt.Fprintf(stdout, i18n.T(
+			"Old binary backed up to: %s\n",
+			"旧版本已备份至: %s\n",
+		), upgrade.BackupDir())
+	}
 	return nil
 }

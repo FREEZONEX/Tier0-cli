@@ -29,6 +29,8 @@ type Result struct {
 	UpToDate       bool   `json:"upToDate"`
 	DownloadURL    string `json:"downloadUrl,omitempty"`
 	ErrorMessage   string `json:"error,omitempty"`
+	// Method indicates how the upgrade was performed: "npm" or "github"
+	Method string `json:"method,omitempty"`
 }
 
 // Check reports whether a newer version is available.
@@ -84,7 +86,11 @@ func Check() (*Result, error) {
 	return result, nil
 }
 
-// Perform 执行升级
+// Perform 执行升级。
+//
+// 策略（与 lark-cli 一致）：
+//  1. 若 npm 可用 → npm install -g @tier0/cli@<version>（postinstall 负责下二进制）
+//  2. npm 不可用 → 直接从 GitHub Releases 下载二进制并替换
 func Perform(opts Options) (*Result, error) {
 	var release *Release
 	var err error
@@ -98,7 +104,6 @@ func Perform(opts Options) (*Result, error) {
 	}
 
 	if opts.TargetVersion == "" && !IsNewer(version.BuildVersion, release.TagName) {
-		// Update cache so background notice also sees the current latest.
 		saveCachedState(&updateState{
 			LatestVersion: release.TagName,
 			CheckedAt:     time.Now().Unix(),
@@ -112,12 +117,12 @@ func Perform(opts Options) (*Result, error) {
 
 	asset := release.FindAsset()
 	if asset == nil {
-		err := fmt.Errorf("未找到适配当前平台 (%s) 的安装包", platformReleaseName())
+		e := fmt.Errorf("未找到适配当前平台 (%s) 的安装包", platformReleaseName())
 		return &Result{
 			CurrentVersion: version.BuildVersion,
 			LatestVersion:  release.TagName,
-			ErrorMessage:   err.Error(),
-		}, err
+			ErrorMessage:   e.Error(),
+		}, e
 	}
 
 	result := &Result{
@@ -130,6 +135,20 @@ func Perform(opts Options) (*Result, error) {
 		return result, nil
 	}
 
+	// ── Path 1: npm available → delegate to npm install ──────────────────
+	if NpmAvailable() {
+		npmResult := RunNpmInstall(release.TagName)
+		if npmResult.Err != nil {
+			// npm failed; fall through to direct download below
+			result.ErrorMessage = fmt.Sprintf("npm install 失败，尝试直接下载: %v", npmResult.Err)
+		} else {
+			result.Method = "npm"
+			return result, nil
+		}
+	}
+
+	// ── Path 2: direct GitHub download ───────────────────────────────────
+	result.Method = "github"
 	binaryPath, err := os.Executable()
 	if err != nil {
 		result.ErrorMessage = fmt.Sprintf("无法获取可执行文件路径: %v", err)
