@@ -245,6 +245,7 @@ npx skills remove FREEZONEX/Tier0-skill
 
 | Version | Date | Notes |
 |---------|------|-------|
+| [v0.4.9](https://github.com/FREEZONEX/Tier0-cli/releases/tag/v0.4.9) | 2026-05-26 | 新增 `tier0 uninstall`；修复安装版本错误（直接用 npm 包版本）；修复 release.sh JSON 400 |
 | [v0.4.6](https://github.com/FREEZONEX/Tier0-cli/releases/tag/v0.4.6) | 2026-05-26 | npm 包更名为 `@tier0/cli`；一键安装/卸载 CLI + Agent Skills；修复 login 轮询类型错误 |
 | [v0.3.0](https://github.com/FREEZONEX/Tier0-cli/releases/tag/v0.3.0) | 2026-05-20 | Add `flow` command (Node-RED SourceFlow/EventFlow management); bilingual UI (en/zh), default English |
 | [v0.2.4](https://github.com/FREEZONEX/Tier0-cli/releases/tag/v0.2.4) | 2026-05-18 | 修复 `login --setup-code` 轮询时 WorkspaceID 类型不匹配导致的 JSON 解码失败 |

@@ -4,6 +4,20 @@ All notable changes to Tier0 CLI are documented here.
 
 ---
 
+## [v0.4.9] — 2026-05-26
+
+### ✨ Features
+
+- 新增 `tier0 uninstall` Go 命令（`--purge` 彻底清除含凭证，`--keep-skills` 保留 Agent Skills）
+
+### 🐛 Bug Fixes
+
+- **install**：版本检测改为直接读 `package.json`，不再调 GitHub API `/releases/latest`，彻底解决安装旧版本的问题（参考 Lark CLI 方案）
+- **release.sh**：GitHub Release JSON payload 改用 Node.js `JSON.stringify` 生成，修复 bash `printf \n` 导致的 HTTP 400
+- **release.sh**：GitHub Release 失败时自动跳过 `npm publish`，防止发布不完整的版本
+
+---
+
 ## [v0.4.6] — 2026-05-26
 
 ### ✨ Features
