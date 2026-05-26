@@ -22,4 +22,5 @@ func init() {
 	flowCmd.AddCommand(flowDeleteCmd)
 	flowCmd.AddCommand(flowDataCmd)
 	flowCmd.AddCommand(flowDeployCmd)
+	flowCmd.AddCommand(flowNodesCmd)
 }

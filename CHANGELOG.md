@@ -4,6 +4,15 @@ All notable changes to Tier0 CLI are documented here.
 
 ---
 
+## Unreleased
+
+### ✨ Features
+
+- **auth whoami**：新增 `tier0 auth whoami`，用于查看当前 API Key 绑定的用户、Workspace、Key 类型、角色和权限
+- **flow nodes**：新增 `tier0 flow nodes --source|--event`，用于查询 SourceFlow / EventFlow 当前实际可用的 Node-RED 节点类型
+
+---
+
 ## [v0.4.12] — 2026-05-26
 
 ### ✨ Features

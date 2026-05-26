@@ -82,6 +82,16 @@ tier0 api /openapi/v1/uns/read --body '{"topics":["demo"]}'
 tier0 api /openapi/v1/uns/browse --body '{"path":"/"}'
 ```
 
+### 查看当前 API Key
+
+```bash
+# 查看当前 API Key 绑定的用户、Workspace 和权限
+tier0 auth whoami
+
+# JSON 输出
+tier0 auth whoami --json
+```
+
 ### 管理 Flow（Node-RED）
 
 每个 Workspace 包含两类 Node-RED 容器，通过 `tier0 flow` 子命令统一管理：
@@ -101,6 +111,10 @@ tier0 flow list --event
 
 # 按名称关键词过滤，JSON 输出
 tier0 flow list --keyword "modbus" --json
+
+# 查询当前环境实际可用的 Node-RED 节点类型
+tier0 flow nodes --source
+tier0 flow nodes --event --json
 
 # 查看 Flow 详情
 tier0 flow get --id 1
@@ -245,6 +259,8 @@ npx skills remove FREEZONEX/Tier0-skill
 
 | Version | Date | Notes |
 |---------|------|-------|
+| Unreleased | — | 新增 `tier0 auth whoami` 和 `tier0 flow nodes` |
+| [v0.4.11](https://github.com/FREEZONEX/Tier0-cli/releases/tag/v0.4.11) | 2026-05-26 | 修复写操作忽略后端业务错误的问题 |
 | [v0.4.10](https://github.com/FREEZONEX/Tier0-cli/releases/tag/v0.4.10) | 2026-05-26 | 新增 `tier0 config --api-key` 直接设置 API Key |
 | [v0.4.9](https://github.com/FREEZONEX/Tier0-cli/releases/tag/v0.4.9) | 2026-05-26 | 新增 `tier0 uninstall`；修复安装版本错误（直接用 npm 包版本）；修复 release.sh JSON 400 |
 | [v0.4.6](https://github.com/FREEZONEX/Tier0-cli/releases/tag/v0.4.6) | 2026-05-26 | npm 包更名为 `@tier0/cli`；一键安装/卸载 CLI + Agent Skills；修复 login 轮询类型错误 |
