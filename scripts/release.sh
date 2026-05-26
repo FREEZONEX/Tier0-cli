@@ -222,12 +222,38 @@ release_github() {
   local repo="FREEZONEX/Tier0-cli"
   echo "[github] 创建 Release: ${VERSION} ..."
 
-  # Build JSON payload via a temp file to avoid shell quoting / backtick issues
+  # Build JSON payload with Node.js to guarantee valid JSON encoding
+  # (avoids bash quoting / \n expansion / backtick issues on all platforms)
   local payload_file
   payload_file=$(mktemp)
-  # Use printf so no shell substitution occurs inside the body string
-  printf '{"tag_name":"%s","name":"tier0-cli %s","body":"## Tier0 CLI %s\n\nSee [CHANGELOG](https://github.com/FREEZONEX/Tier0-cli/blob/main/CHANGELOG.md) for full release notes.\n\n**Install**\n\nnpx @tier0/cli@latest install\n\n**Upgrade**\n\ntier0 upgrade"}' \
-    "${VERSION}" "${VERSION}" "${VERSION}" > "$payload_file"
+  (node -e "
+    const body = [
+      '## Tier0 CLI ${VERSION}',
+      '',
+      'See [CHANGELOG](https://github.com/FREEZONEX/Tier0-cli/blob/main/CHANGELOG.md) for full release notes.',
+      '',
+      '**Install**',
+      '',
+      '\`\`\`bash',
+      'npx @tier0/cli@latest install',
+      '\`\`\`',
+      '',
+      '**Upgrade**',
+      '',
+      '\`\`\`bash',
+      'tier0 upgrade',
+      '\`\`\`'
+    ].join('\n');
+    process.stdout.write(JSON.stringify({
+      tag_name: '${VERSION}',
+      name: 'tier0-cli ${VERSION}',
+      body: body
+    }));
+  " > "$payload_file") || {
+    echo "[github] 生成 JSON payload 失败（node 不可用？）"
+    rm -f "$payload_file"
+    return 1
+  }
 
   local release_resp http_code
   release_resp=$(curl -s -w "\n__HTTP_CODE__:%{http_code}" -X POST \
@@ -354,13 +380,20 @@ echo "  发布阶段"
 echo "========================================"
 echo ""
 
-release_github || true
+GITHUB_OK=0
+if release_github; then
+  GITHUB_OK=1
+else
+  echo ""
+  echo "[release] GitHub Release 失败，跳过 npm publish（版本未就绪，不应发布 npm）"
+fi
 
 echo ""
 
-# npm publish 与 GitHub Release 强制同步，每次发版都执行
-# 需要提前 npm login 或设置 NPM_TOKEN
-release_npm || true
+# npm publish 仅在 GitHub Release 成功后执行
+if [[ "${GITHUB_OK}" == "1" ]]; then
+  release_npm || true
+fi
 
 echo ""
 echo "========================================"
