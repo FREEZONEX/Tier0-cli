@@ -4,6 +4,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const { install, BIN_DIR, binaryName } = require('../lib/install');
+const { uninstall } = require('../lib/uninstall');
 
 async function main() {
   const args = process.argv.slice(2);
@@ -12,6 +13,14 @@ async function main() {
   // `npx @tier0/cli@latest install` — explicit install/upgrade command
   if (args[0] === 'install') {
     await install({ force: true });
+    process.exit(0);
+  }
+
+  // `npx @tier0/cli@latest uninstall [--purge] [--keep-skills]`
+  if (args[0] === 'uninstall') {
+    const purge = args.includes('--purge');
+    const keepSkills = args.includes('--keep-skills');
+    await uninstall({ purge, keepSkills });
     process.exit(0);
   }
 

@@ -190,6 +190,57 @@ tier0 login
 
 > **优先级**：`--base-url` 参数 > 环境变量 `TIER0_BASE_URL` > 配置文件 > 默认地址
 
+## 卸载 / Uninstall
+
+### 一键卸载（推荐）
+
+```bash
+npx @tier0/cli@latest uninstall
+```
+
+同时移除：CLI 二进制（`~/.tier0/bin/`）、本地 skills 文档（`~/.tier0/skills/`）、Cursor / Claude Agent Skills。
+
+**保留配置文件，彻底清除（含登录凭证）：**
+```bash
+npx @tier0/cli@latest uninstall --purge
+```
+
+**只卸载 CLI，保留 Agent Skills：**
+```bash
+npx @tier0/cli@latest uninstall --keep-skills
+```
+
+### npm 全局卸载
+
+```bash
+npm uninstall -g @tier0/cli
+```
+
+> `preuninstall` 钩子会自动执行上述清理，等效于 `npx uninstall`。如需跳过清理（CI 环境），可设置环境变量 `TIER0_SKIP_UNINSTALL=1`。
+
+### 手动卸载
+
+```bash
+# 删除二进制
+rm -rf ~/.tier0/bin
+
+# 删除本地 skills 文档
+rm -rf ~/.tier0/skills
+
+# 删除 Agent Skills（如已安装）
+npx skills remove FREEZONEX/Tier0-skill
+
+# 可选：删除登录凭证
+rm -f ~/.tier0/config.json
+```
+
+**Windows (PowerShell)：**
+```powershell
+Remove-Item -Recurse -Force "$env:USERPROFILE\.tier0\bin"
+Remove-Item -Recurse -Force "$env:USERPROFILE\.tier0\skills"
+npx skills remove FREEZONEX/Tier0-skill
+```
+
 ## 版本历史 / Changelog
 
 | Version | Date | Notes |

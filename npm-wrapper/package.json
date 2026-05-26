@@ -6,7 +6,8 @@
     "tier0": "./bin/tier0"
   },
   "scripts": {
-    "postinstall": "node lib/install.js"
+    "postinstall": "node lib/install.js",
+    "preuninstall": "node lib/uninstall.js"
   },
   "files": [
     "bin/",
