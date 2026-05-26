@@ -266,6 +266,52 @@ release_github() {
   echo "[github] 发布完成: https://github.com/${repo}/releases/tag/${VERSION}"
 }
 
+# ========================================
+# npm publish
+# ========================================
+release_npm() {
+  local npm_dir="${ROOT}/npm-wrapper"
+
+  if [[ ! -f "${npm_dir}/package.json" ]]; then
+    echo "[npm] npm-wrapper/package.json 不存在，跳过 npm 发布"
+    return 1
+  fi
+
+  # 同步 package.json 版本号（去掉 v 前缀）
+  local semver="${VERSION#v}"
+  if command -v node >/dev/null 2>&1; then
+    node -e "
+      const fs = require('fs');
+      const p = '${npm_dir}/package.json';
+      const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
+      pkg.version = '${semver}';
+      fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + '\n');
+      console.log('[npm] package.json version → ' + pkg.version);
+    "
+  else
+    echo "[npm] 未找到 node，跳过版本号同步"
+  fi
+
+  # 检查 npm 登录态（需提前 npm login 或设置 NPM_TOKEN）
+  if [[ -n "${NPM_TOKEN:-}" ]]; then
+    echo "[npm] 使用 NPM_TOKEN 认证..."
+    echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > "${npm_dir}/.npmrc"
+  fi
+
+  echo "[npm] 发布 @tier0/cli@${semver} ..."
+  if (cd "${npm_dir}" && npm publish --access public 2>&1); then
+    echo "[npm] 发布成功: https://www.npmjs.com/package/@tier0/cli"
+    # 清理临时 .npmrc
+    rm -f "${npm_dir}/.npmrc"
+  else
+    rm -f "${npm_dir}/.npmrc"
+    echo "[npm] 发布失败，请检查："
+    echo "      1. npm 已登录（npm whoami）或已设置 NPM_TOKEN"
+    echo "      2. 包名 @tier0/cli 的发布权限（需 @tier0 org 成员）"
+    return 1
+  fi
+}
+
 # 尝试发布
 echo "========================================"
 echo "  发布阶段"
@@ -273,6 +319,18 @@ echo "========================================"
 echo ""
 
 release_github || true
+
+echo ""
+
+# npm publish：仅当 --publish-npm 标志或 NPM_TOKEN 已设置时执行
+if [[ "${PUBLISH_NPM:-}" == "1" ]] || [[ -n "${NPM_TOKEN:-}" ]]; then
+  release_npm || true
+else
+  echo "[npm] 跳过 npm publish（未设置 NPM_TOKEN 或 --publish-npm）"
+  echo "      如需发布 npm 包，请设置环境变量后重新运行:"
+  echo "      NPM_TOKEN=npm_xxxxxxxx bash scripts/release.sh ${VERSION}"
+  echo "      或: PUBLISH_NPM=1 bash scripts/release.sh ${VERSION}  # 使用 npm login 的登录态"
+fi
 
 echo ""
 echo "========================================"
