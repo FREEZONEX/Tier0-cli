@@ -62,11 +62,15 @@ go install github.com/FREEZONEX/Tier0-cli@latest
 ### 登录授权
 
 ```bash
-# 交互模式（默认）
+# 交互模式（默认，显示 URL 后自动轮询直到授权完成）
 tier0 login
 
-# AI 友好模式（输出 URL 后退出，不阻塞）
-tier0 login --no-wait
+# Agent 全自动模式：第 1 步获取 URL（非阻塞），第 2 步立即轮询
+tier0 login --no-wait --json   # → 解析 setup_code 和 verification_url
+tier0 login --setup-code <code>  # → 轮询直到用户授权，自动保存 API Key
+
+# 直接设置 API Key（已有 key 时最简单）
+tier0 config --api-key sk-per-xxxxxx
 
 # 指定平台地址
 tier0 login --base-url https://tier0.dev
