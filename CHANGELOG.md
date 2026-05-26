@@ -13,6 +13,17 @@ All notable changes to Tier0 CLI are documented here.
 
 ---
 
+## [v0.4.13] — 2026-05-26
+
+### ✨ Features
+
+- **upgrade**：升级策略全面改进，与 lark-cli 对齐：
+  - 版本检查优先走 npm registry（无限速），失败自动降级到 npmmirror.com，最后兜底 GitHub API
+  - npm 可用时直接运行 `npm install -g @tier0/cli@<version>`（不再直接操作二进制文件），npm 失败自动降级到 GitHub 直链下载
+  - npm install 失败时自动切换 `--registry https://registry.npmmirror.com` 重试，对中国用户友好
+
+---
+
 ## [v0.4.12] — 2026-05-26
 
 ### ✨ Features
