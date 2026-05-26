@@ -349,15 +349,9 @@ release_github || true
 
 echo ""
 
-# npm publish：仅当 --publish-npm 标志或 NPM_TOKEN 已设置时执行
-if [[ "${PUBLISH_NPM:-}" == "1" ]] || [[ -n "${NPM_TOKEN:-}" ]]; then
-  release_npm || true
-else
-  echo "[npm] 跳过 npm publish（未设置 NPM_TOKEN 或 --publish-npm）"
-  echo "      如需发布 npm 包，请设置环境变量后重新运行:"
-  echo "      NPM_TOKEN=npm_xxxxxxxx bash scripts/release.sh ${VERSION}"
-  echo "      或: PUBLISH_NPM=1 bash scripts/release.sh ${VERSION}  # 使用 npm login 的登录态"
-fi
+# npm publish 与 GitHub Release 强制同步，每次发版都执行
+# 需要提前 npm login 或设置 NPM_TOKEN
+release_npm || true
 
 echo ""
 echo "========================================"

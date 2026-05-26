@@ -263,15 +263,14 @@ npx skills remove FREEZONEX/Tier0-skill
 | npm 包 `@tier0/cli` | npm registry | 提供 `bin/tier0` Node 入口脚本 |
 | `tier0` 二进制 | GitHub Releases | 由 `install.js` 按平台下载到 `~/.tier0/bin/` |
 
-- **只更新 Go CLI 逻辑** → 只需发 GitHub Release，npm 包无需重新发布（`install.js` 自动取 GitHub latest）
-- **修改了 wrapper 脚本**（`bin/tier0`、`lib/install.js` 等）→ 需同时发 GitHub Release + `npm publish`
+- npm 包版本与 Go 二进制版本**强制同步**：每次 `release.sh` 都同时发 GitHub Release + `npm publish`，版本号始终一致。
 
-### 发布 GitHub Release + npm 包（一键）
+### 发布（一键）
 
 ```bash
 export GITHUB_TOKEN=ghp_xxxxxxxx   # GitHub PAT，需要 repo 权限
 export NPM_TOKEN=npm_xxxxxxxx       # npm Access Token，需要 @tier0 org 发布权限
-bash scripts/release.sh v0.4.1
+bash scripts/release.sh v0.4.6
 ```
 
 脚本自动完成：
@@ -280,28 +279,12 @@ bash scripts/release.sh v0.4.1
 3. 同步 `npm-wrapper/package.json` 版本号
 4. `npm publish --access public`
 
-### 只发 GitHub Release（常规 Go CLI 更新）
-
-```bash
-export GITHUB_TOKEN=ghp_xxxxxxxx
-bash scripts/release.sh v0.4.1
-# NPM_TOKEN 未设置时自动跳过 npm publish
-```
-
-### 只发 npm 包（只改了 wrapper 脚本）
-
-```bash
-cd npm-wrapper
-# 手动更新 package.json 版本号
-npm publish --access public
-```
-
-### 使用已有 npm login 会话发布
+### 使用已有 npm login 会话（无 NPM_TOKEN）
 
 ```bash
 npm login   # 交互登录，登录态持久化到 ~/.npmrc
 export GITHUB_TOKEN=ghp_xxxxxxxx
-PUBLISH_NPM=1 bash scripts/release.sh v0.4.1
+bash scripts/release.sh v0.4.6
 ```
 
 ### 首次发布前确认
@@ -310,6 +293,6 @@ PUBLISH_NPM=1 bash scripts/release.sh v0.4.1
 # 确认 npm 登录态
 npm whoami
 
-# 确认包名可用 / 发布权限
+# 确认 @tier0 org 发布权限
 npm access list packages @tier0
 ```
