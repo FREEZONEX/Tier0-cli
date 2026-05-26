@@ -55,12 +55,10 @@ func Start() *Checker {
 // Emit collects the background result (non-blocking — uses whatever arrived,
 // or skips silently on timeout / error) and writes the notice.
 //
-//   - jsonMode=true : injects "_notice" into resp (which must be a JSON string)
-//     and writes the merged output to w.
-//   - jsonMode=false: prints a one-line hint to w (stderr).
-//
-// In both cases the caller should pass the original command output separately
-// when jsonMode is true (see InjectAndPrint).
+//   - jsonMode=true : always writes resp to stdout; if an update is available
+//     the "_notice" key is injected before writing.
+//   - jsonMode=false: resp is ignored (caller already printed it); an update
+//     hint is printed to stderr when a newer version exists.
 func (c *Checker) Emit(resp string, jsonMode bool, stdout, stderr io.Writer) {
 	// Non-blocking receive: if the goroutine hasn't finished yet, skip.
 	var result *upgrade.Result
@@ -69,14 +67,37 @@ func (c *Checker) Emit(resp string, jsonMode bool, stdout, stderr io.Writer) {
 	default:
 	}
 
-	if result == nil || result.UpToDate || result.LatestVersion == "" {
-		return
-	}
-	if version.IsDev() {
+	hasUpdate := result != nil &&
+		!result.UpToDate &&
+		result.LatestVersion != "" &&
+		!version.IsDev()
+
+	if jsonMode {
+		// Always write resp so callers don't need to duplicate the print.
+		if hasUpdate {
+			notice := buildNotice(result)
+			fmt.Fprintln(stdout, injectNotice(resp, notice))
+		} else {
+			fmt.Fprintln(stdout, resp)
+		}
 		return
 	}
 
-	notice := &Notice{
+	// Plain mode: update hint goes to stderr only.
+	if hasUpdate {
+		fmt.Fprintf(stderr, "\n%s\n",
+			i18n.T(
+				fmt.Sprintf("💡 New version available: %s → %s  Run: tier0 upgrade",
+					result.CurrentVersion, result.LatestVersion),
+				fmt.Sprintf("💡 发现新版本: %s → %s  运行: tier0 upgrade",
+					result.CurrentVersion, result.LatestVersion),
+			),
+		)
+	}
+}
+
+func buildNotice(result *upgrade.Result) *Notice {
+	return &Notice{
 		Update: &UpdateNotice{
 			UpdateAvailable: true,
 			CurrentVersion:  result.CurrentVersion,
@@ -89,20 +110,6 @@ func (c *Checker) Emit(resp string, jsonMode bool, stdout, stderr io.Writer) {
 					result.CurrentVersion, result.LatestVersion),
 			),
 		},
-	}
-
-	if jsonMode {
-		merged := injectNotice(resp, notice)
-		fmt.Fprintln(stdout, merged)
-	} else {
-		fmt.Fprintf(stderr, "\n%s\n",
-			i18n.T(
-				fmt.Sprintf("💡 New version available: %s → %s  Run: tier0 upgrade",
-					result.CurrentVersion, result.LatestVersion),
-				fmt.Sprintf("💡 发现新版本: %s → %s  运行: tier0 upgrade",
-					result.CurrentVersion, result.LatestVersion),
-			),
-		)
 	}
 }
 

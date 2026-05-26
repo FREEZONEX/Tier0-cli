@@ -76,7 +76,7 @@ func runFlowList(cmd *cobra.Command, args []string) error {
 			CurrentVersionName string `json:"currentVersionName"`
 		} `json:"list"`
 	}
-	if err := json.Unmarshal([]byte(resp), &result); err != nil {
+	if err := json.Unmarshal([]byte(cmdutil.ExtractData(resp)), &result); err != nil {
 		fmt.Fprintln(stdout, resp)
 		return nil
 	}

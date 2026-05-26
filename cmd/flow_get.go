@@ -62,7 +62,7 @@ func runFlowGet(cmd *cobra.Command, args []string) error {
 		CurrentVersionName string `json:"currentVersionName"`
 		CurrentVersionType string `json:"currentVersionType"`
 	}
-	if err := json.Unmarshal([]byte(resp), &f); err != nil {
+	if err := json.Unmarshal([]byte(cmdutil.ExtractData(resp)), &f); err != nil {
 		fmt.Fprintln(stdout, resp)
 		return nil
 	}
