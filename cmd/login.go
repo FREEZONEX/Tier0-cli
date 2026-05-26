@@ -52,12 +52,16 @@ func runLogin(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(stdout, `{"status":"authorization_required","verification_url":"%s","setup_code":"%s","expires_in":600}`+"\n", consoleURL, setupCode)
 		} else {
 			fmt.Fprintf(stdout, i18n.T(
-				"Please complete authorization in your browser: %s\n",
-				"请在浏览器中完成授权：%s\n",
+				"Please complete authorization in your browser:\n  %s\n",
+				"请在浏览器中完成授权：\n  %s\n",
 			), consoleURL)
 			fmt.Fprintf(stdout, i18n.T(
-				"After authorization, run: tier0 login --setup-code %s\n",
-				"授权完成后执行: tier0 login --setup-code %s\n",
+				"setup_code: %s\n",
+				"setup_code: %s\n",
+			), setupCode)
+			fmt.Fprintf(stdout, i18n.T(
+				"Polling automatically with: tier0 login --setup-code %s\n",
+				"可立即自动轮询：tier0 login --setup-code %s\n",
 			), setupCode)
 		}
 		return nil
