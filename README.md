@@ -8,10 +8,12 @@ Tier0 平台命令行工具。
 
 需要 Node.js >= 16。
 
-**一行安装（推荐）：**
+**一键安装 CLI + Agent Skills（推荐）：**
 ```bash
 npx @tier0/cli@latest install
 ```
+
+一条命令完成：① 下载对应平台的 Go 二进制到 `~/.tier0/bin/`；② 自动安装 Cursor / Claude Agent Skills。
 
 **全局安装（安装后直接使用 `tier0` 命令）：**
 ```bash
@@ -19,9 +21,8 @@ npm install -g @tier0/cli
 ```
 
 **特点**：
-- 首次运行自动下载对应平台的 Go 二进制
 - 无需 sudo、无需重启终端
-- 支持 Linux / macOS / Windows
+- 支持 Linux / macOS / Windows（x86_64 / arm64）
 
 **npx 直接运行（无需全局安装）：**
 ```bash

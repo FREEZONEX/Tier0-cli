@@ -206,6 +206,20 @@ async function install({ force = false } = {}) {
     console.error(`Installation failed: ${err.message}`);
     process.exit(1);
   }
+
+  // Install Cursor/Claude agent skills
+  await installSkills();
+}
+
+async function installSkills() {
+  console.log('\nInstalling Tier0 agent skills...');
+  try {
+    execSync('npx --yes skills add FREEZONEX/Tier0-skill', { stdio: 'inherit' });
+    console.log('✓ Tier0 agent skills installed.');
+  } catch (err) {
+    console.warn(`⚠ Skills installation failed (non-fatal): ${err.message}`);
+    console.warn('  You can install manually: npx skills add FREEZONEX/Tier0-skill');
+  }
 }
 
 // Run install if called directly
