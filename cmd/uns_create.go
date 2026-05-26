@@ -101,6 +101,9 @@ func runUnsCreate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
 	}
+	if err := cmdutil.CheckOK(resp); err != nil {
+		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
+	}
 
 	stdout := cmd.OutOrStdout()
 	checker.Emit(resp, jsonMode, stdout, cmd.ErrOrStderr())

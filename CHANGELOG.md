@@ -4,6 +4,15 @@ All notable changes to Tier0 CLI are documented here.
 
 ---
 
+## [v0.4.11] — 2026-05-26
+
+### 🐛 Bug Fixes
+
+- **uns create / write / update / delete / restore**：修复写操作在后端返回 HTTP 200 + `{"code":非零}` 时仍打印"创建成功"的假阳性问题，现在会正确报错并显示后端错误信息
+- **flow create / update / deploy / delete**：同上，补充 `CheckOK` 校验，避免业务层错误被忽略
+
+---
+
 ## [v0.4.10] — 2026-05-26
 
 ### ✨ Features

@@ -83,6 +83,23 @@ func JSONString(v any) string {
 	return string(b)
 }
 
+// CheckOK parses the standard backend envelope {"code":N,"msg":"..."} and returns
+// an error if code != 0. HTTP 200 responses with a non-zero code are business-logic
+// failures that DoAPI does not catch (it only checks HTTP status).
+func CheckOK(resp string) error {
+	var rv struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
+	if err := json.Unmarshal([]byte(resp), &rv); err != nil {
+		return nil // not a standard envelope, assume OK
+	}
+	if rv.Code != 0 {
+		return apierr.New(rv.Code, resp)
+	}
+	return nil
+}
+
 // ExtractData unwraps the standard backend envelope {"code":N,"msg":"...","data":{...}}
 // and returns the raw JSON of the "data" field.
 // If the response has no "data" field the original string is returned unchanged,
