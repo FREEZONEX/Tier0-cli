@@ -9,6 +9,10 @@ const REPO = 'FREEZONEX/Tier0-cli';
 const BIN_DIR = path.join(require('os').homedir(), '.tier0', 'bin');
 const VERSION_FILE = path.join(BIN_DIR, '.version');
 
+// 版本直接取自 package.json，与 Go Release 强制同步（参考 Lark CLI 做法）
+// 不再调 GitHub API 取 latest，避免 GitHub Release 滞后导致安装旧版本
+const VERSION = `v${require('../package.json').version}`;
+
 function platformName() {
   const os = process.platform;
   const arch = process.arch;
@@ -59,31 +63,6 @@ function copyDirSync(src, dst) {
   }
 }
 
-function getLatestVersion() {
-  return new Promise((resolve, reject) => {
-    const url = `https://api.github.com/repos/${REPO}/releases/latest`;
-    const req = https.get(url, {
-      headers: {
-        'User-Agent': 'tier0-cli-installer',
-        'Accept': 'application/vnd.github.v3+json',
-      },
-      timeout: 15000,
-    }, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try {
-          const json = JSON.parse(data);
-          resolve(json.tag_name || 'v0.2.6');
-        } catch {
-          resolve('v0.2.6');
-        }
-      });
-    });
-    req.on('error', () => resolve('v0.2.6'));
-    req.on('timeout', () => { req.destroy(); resolve('v0.2.6'); });
-  });
-}
 
 function downloadFile(url, dest) {
   return new Promise((resolve, reject) => {
@@ -124,7 +103,7 @@ function extractTarGz(tarPath, destDir) {
 
 async function install({ force = false } = {}) {
   const plat = platformName();
-  const version = await getLatestVersion();
+  const version = VERSION;  // always use npm package version — in sync with Go release
   const binPath = path.join(BIN_DIR, binaryName());
 
   // Check if already installed and up to date (skip when force=true)
