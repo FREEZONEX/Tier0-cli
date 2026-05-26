@@ -4,6 +4,18 @@ All notable changes to Tier0 CLI are documented here.
 
 ---
 
+## [v0.4.12] — 2026-05-26
+
+### ✨ Features
+
+- **login**：Agent 登录流程优化，无需等待用户回复即可自动轮询。推荐流程：先 `tier0 login --no-wait --json` 获取 URL 展示给用户，立即接 `tier0 login --setup-code <code>` 自动轮询，用户浏览器授权后自动保存 API Key
+
+### 🐛 Bug Fixes
+
+- **login**：`--no-wait` 非 JSON 模式现在也会输出 `setup_code` 字段，方便 agent 解析
+
+---
+
 ## [v0.4.11] — 2026-05-26
 
 ### 🐛 Bug Fixes
