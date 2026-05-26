@@ -14,8 +14,18 @@ var configCmd = &cobra.Command{
 	Use:   "config",
 	Short: i18n.T("View or update configuration", "查看/管理配置"),
 	Long: i18n.T(
-		"View or update CLI configuration (base URL, language). Without flags, displays the current settings.",
-		"查看或修改 CLI 配置（平台地址、语言）。不带参数时显示当前设置。",
+		"View or update CLI configuration (base URL, API key, language). Without flags, displays the current settings.",
+		"查看或修改 CLI 配置（平台地址、API Key、语言）。不带参数时显示当前设置。",
+	),
+	Example: i18n.T(
+		`  tier0 config
+  tier0 config --base-url https://tier0.dev
+  tier0 config --api-key sk-per-xxxxxx
+  tier0 config --lang zh`,
+		`  tier0 config
+  tier0 config --base-url https://tier0.dev
+  tier0 config --api-key sk-per-xxxxxx
+  tier0 config --lang zh`,
 	),
 	RunE: runConfig,
 }
@@ -23,17 +33,20 @@ var configCmd = &cobra.Command{
 func init() {
 	configCmd.Flags().String("base-url", "",
 		i18n.T("Set the platform base URL", "设置平台地址"))
+	configCmd.Flags().String("api-key", "",
+		i18n.T("Set the API key (alternative to tier0 login)", "设置 API Key（可替代 tier0 login）"))
 	configCmd.Flags().String("lang", "",
 		i18n.T("Set UI language: en | zh", "设置界面语言: en | zh"))
 }
 
 func runConfig(cmd *cobra.Command, args []string) error {
 	setBaseURL, _ := cmd.Flags().GetString("base-url")
+	setAPIKey, _ := cmd.Flags().GetString("api-key")
 	setLang, _ := cmd.Flags().GetString("lang")
 	stdout := cmd.OutOrStdout()
 	stderr := cmd.ErrOrStderr()
 
-	if setBaseURL != "" || setLang != "" {
+	if setBaseURL != "" || setAPIKey != "" || setLang != "" {
 		if setLang != "" {
 			setLang = strings.ToLower(strings.TrimSpace(setLang))
 			if setLang != "en" && setLang != "zh" {
@@ -48,6 +61,9 @@ func runConfig(cmd *cobra.Command, args []string) error {
 		if setBaseURL != "" {
 			profile.BaseURL = strings.TrimRight(setBaseURL, "/")
 		}
+		if setAPIKey != "" {
+			profile.APIKey = strings.TrimSpace(setAPIKey)
+		}
 		if setLang != "" {
 			profile.Lang = setLang
 		}
@@ -56,6 +72,9 @@ func runConfig(cmd *cobra.Command, args []string) error {
 		}
 		if setBaseURL != "" {
 			fmt.Fprintf(stdout, i18n.T("✓ BaseURL set to: %s\n", "✓ BaseURL 已设置为: %s\n"), strings.TrimRight(setBaseURL, "/"))
+		}
+		if setAPIKey != "" {
+			fmt.Fprintf(stdout, i18n.T("✓ API Key set (%s...)\n", "✓ API Key 已设置 (%s...)\n"), profile.APIKey[:min(8, len(profile.APIKey))])
 		}
 		if setLang != "" {
 			i18n.SetLang(setLang)
@@ -88,4 +107,11 @@ func runConfig(cmd *cobra.Command, args []string) error {
 	}
 	_ = stderr
 	return nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
