@@ -70,6 +70,7 @@ func init() {
 	rootCmd.AddCommand(loginCmd)
 	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(upgradeCmd)
+	rootCmd.AddCommand(uninstallCmd)
 	rootCmd.AddCommand(skillsCmd)
 	rootCmd.AddCommand(flowCmd)
 	rootCmd.AddCommand(unsCmd)
