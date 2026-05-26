@@ -4,6 +4,17 @@ All notable changes to Tier0 CLI are documented here.
 
 ---
 
+## [v0.4.10] — 2026-05-26
+
+### ✨ Features
+
+- **config**：新增 `--api-key` 标志，可直接设置 API Key（替代 `tier0 login` Device Flow）
+  ```bash
+  tier0 config --api-key sk-per-xxxxxx
+  ```
+
+---
+
 ## [v0.4.9] — 2026-05-26
 
 ### ✨ Features
