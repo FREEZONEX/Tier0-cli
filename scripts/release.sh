@@ -222,12 +222,21 @@ release_github() {
   local repo="FREEZONEX/Tier0-cli"
   echo "[github] 创建 Release: ${VERSION} ..."
 
+  # Build JSON payload via a temp file to avoid shell quoting / backtick issues
+  local payload_file
+  payload_file=$(mktemp)
+  # Use printf so no shell substitution occurs inside the body string
+  printf '{"tag_name":"%s","name":"tier0-cli %s","body":"## Tier0 CLI %s\n\nSee [CHANGELOG](https://github.com/FREEZONEX/Tier0-cli/blob/main/CHANGELOG.md) for full release notes.\n\n**Install**\n\nnpx @tier0/cli@latest install\n\n**Upgrade**\n\ntier0 upgrade"}' \
+    "${VERSION}" "${VERSION}" "${VERSION}" > "$payload_file"
+
   local release_resp http_code
   release_resp=$(curl -s -w "\n__HTTP_CODE__:%{http_code}" -X POST \
     -H "Authorization: token ${GITHUB_TOKEN}" \
     -H "Accept: application/vnd.github.v3+json" \
+    -H "Content-Type: application/json" \
     "https://api.github.com/repos/${repo}/releases" \
-    -d "{\"tag_name\":\"${VERSION}\",\"name\":\"tier0-cli ${VERSION}\",\"body\":\"## Tier0 CLI ${VERSION}\n\nSee [CHANGELOG](https://github.com/FREEZONEX/Tier0-cli#版本历史--changelog) for details.\n\n### Install\n\`\`\`bash\nnpx @tier0/cli@latest install\n\`\`\`\n\n### Upgrade\n\`\`\`bash\ntier0 upgrade\n\`\`\`\"}")
+    --data-binary "@${payload_file}")
+  rm -f "$payload_file"
 
   http_code=$(echo "$release_resp" | grep '__HTTP_CODE__:' | cut -d: -f2)
   release_resp=$(echo "$release_resp" | grep -v '__HTTP_CODE__:')
