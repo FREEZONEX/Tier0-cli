@@ -255,6 +255,21 @@ release_github() {
     return 1
   }
 
+  # Preflight: 检查 api.github.com 连通性（超时 8 秒）
+  local ping_code
+  ping_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 \
+    -H "Authorization: token ${GITHUB_TOKEN}" \
+    -H "Accept: application/vnd.github.v3+json" \
+    "https://api.github.com/rate_limit" 2>/dev/null || echo "000")
+  if [[ "$ping_code" == "000" ]]; then
+    echo "[github] 创建 Release 失败（HTTP 000）"
+    echo "[github] 常见原因："
+    echo "         000 — 无法连接 api.github.com（网络不通 / 防火墙 / 代理未配置）"
+    echo "               如使用代理，请设置: export https_proxy=http://host:port"
+    rm -f "$payload_file"
+    return 1
+  fi
+
   local release_resp http_code
   release_resp=$(curl -s -w "\n__HTTP_CODE__:%{http_code}" -X POST \
     -H "Authorization: token ${GITHUB_TOKEN}" \
