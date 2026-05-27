@@ -90,6 +90,7 @@ func JSONString(v any) string {
 //   - code 200  → success
 //   - code 0    → field absent / zero-valued, treat as success
 //   - anything else (400, 500, …) → failure
+//   - data.success false → bulk operation has failed items
 //
 // HTTP-level errors (4xx/5xx status) are already handled by DoAPI; this catches
 // the cases where the server responds HTTP 200 but embeds an error in the body.
@@ -97,6 +98,10 @@ func CheckOK(resp string) error {
 	var rv struct {
 		Code int    `json:"code"`
 		Msg  string `json:"msg"`
+		Data struct {
+			Success *bool            `json:"success"`
+			Results []bulkResultItem `json:"results"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal([]byte(resp), &rv); err != nil {
 		return nil // not a standard envelope, assume OK
@@ -104,7 +109,43 @@ func CheckOK(resp string) error {
 	if rv.Code != 0 && rv.Code != 200 {
 		return apierr.New(rv.Code, resp)
 	}
+	if rv.Data.Success != nil && !*rv.Data.Success {
+		code, msg := firstBulkError(rv.Data.Results)
+		if msg == "" {
+			msg = "batch operation failed"
+		}
+		if code == 0 {
+			code = 400
+		}
+		return apierr.New(code, JSONString(map[string]any{"code": code, "msg": msg}))
+	}
 	return nil
+}
+
+type bulkResultItem struct {
+	Success *bool  `json:"success"`
+	Topic   string `json:"topic"`
+	Error   *struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	} `json:"error,omitempty"`
+}
+
+func firstBulkError(results []bulkResultItem) (int, string) {
+	for _, item := range results {
+		if item.Success != nil && *item.Success {
+			continue
+		}
+		if item.Error == nil {
+			continue
+		}
+		msg := item.Error.Message
+		if item.Topic != "" && msg != "" {
+			msg = item.Topic + ": " + msg
+		}
+		return item.Error.Code, msg
+	}
+	return 0, ""
 }
 
 // ExtractData unwraps the standard backend envelope {"code":N,"msg":"...","data":{...}}
