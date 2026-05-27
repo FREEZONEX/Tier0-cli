@@ -30,7 +30,7 @@ func TestParseNamespaceFile_Array(t *testing.T) {
 }
 
 func TestBuildNamespaceTreeFromPath_MultiLevel(t *testing.T) {
-	leaf, err := buildLeafNode("Temperature", "METRIC", "", "", "", "", "")
+	leaf, err := buildLeafNode("Temperature", "METRIC", "", "", "", "", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestBuildNamespaceTreeFromPath_MultiLevel(t *testing.T) {
 }
 
 func TestBuildNamespaceFromFlags_WithParent(t *testing.T) {
-	ns, fullPath, err := buildNamespaceFromFlags("Plant", "Line1/Metric/Temp", "METRIC", "", "", "", "", "")
+	ns, fullPath, err := buildNamespaceFromFlags("Plant", "Line1/Metric/Temp", "METRIC", "", "", "", "", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,13 +90,31 @@ func TestNormalizeCreateNodeType(t *testing.T) {
 		{"file", "action", "file", "action"},
 	}
 	for _, tt := range tests {
-		gotType, gotTopicType, err := normalizeCreateNodeType(tt.inType, tt.inTopicType)
+		gotType, gotTopicType, err := normalizeCreateNodeType(tt.inType, tt.inTopicType, nil)
 		if err != nil {
 			t.Fatalf("%s: %v", tt.inType, err)
 		}
 		if gotType != tt.wantType || gotTopicType != tt.wantTopicType {
 			t.Fatalf("%s: got %s/%s want %s/%s", tt.inType, gotType, gotTopicType, tt.wantType, tt.wantTopicType)
 		}
+	}
+}
+
+func TestBuildNamespaceFromFlags_TypeFolderEnforced(t *testing.T) {
+	// Missing type folder: second-to-last is "Line1", not "metric".
+	_, _, err := buildNamespaceFromFlags("", "Plant/Line1/Temperature", "METRIC", "", "", "", "", "", nil)
+	if err == nil {
+		t.Fatal("expected error for missing type folder, got nil")
+	}
+	// Only one segment: no parent folder at all.
+	_, _, err = buildNamespaceFromFlags("", "Temperature", "METRIC", "", "", "", "", "", nil)
+	if err == nil {
+		t.Fatal("expected error for single-segment metric path, got nil")
+	}
+	// Correct path should pass.
+	_, _, err = buildNamespaceFromFlags("", "Plant/Line1/Metric/Temperature", "METRIC", "", "", "", "", "", nil)
+	if err != nil {
+		t.Fatalf("unexpected error for valid path: %v", err)
 	}
 }
 

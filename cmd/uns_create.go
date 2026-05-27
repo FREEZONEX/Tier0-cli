@@ -14,16 +14,18 @@ var unsCreateCmd = &cobra.Command{
 	Use:   "create",
 	Short: i18n.T("Create UNS namespace nodes", "创建 UNS 命名空间节点"),
 	Long: i18n.T(
-		"Create new UNS namespace nodes.\n\n"+
-			"Single-node mode (--topic): path segments before the last one are auto-created as folders.\n"+
-			"Use --parent to create under an existing path.\n\n"+
+		"Create a single UNS namespace node.\n\n"+
+			"Path segments before the last one are auto-created as folders.\n"+
+			"Use --parent to create under an existing path.\n"+
+			"For batch or complex structures use --file.\n\n"+
 			"Examples:\n"+
 			"  tier0 uns create --topic Plant/Line1/Metric/Temperature --type METRIC\n"+
 			"  tier0 uns create --parent Plant --topic Line1 --type FOLDER --display-name 'Line 1'\n"+
 			"  tier0 uns create --file namespace.json",
-		"创建新的 UNS 命名空间节点。\n\n"+
-			"单节点模式（--topic）：除最后一段外，路径中的中间段会自动建为 folder。\n"+
-			"可用 --parent 在已有路径下创建。\n\n"+
+		"创建单个 UNS 命名空间节点。\n\n"+
+			"路径中间段自动建为 folder。\n"+
+			"可用 --parent 在已有路径下创建。\n"+
+			"批量或复杂结构请用 --file。\n\n"+
 			"示例:\n"+
 			"  tier0 uns create --topic Plant/Line1/Metric/Temperature --type METRIC\n"+
 			"  tier0 uns create --parent Plant --topic Line1 --type FOLDER --display-name 'Line 1'\n"+
@@ -70,7 +72,14 @@ func runUnsCreate(cmd *cobra.Command, args []string) error {
 	var namespace []any
 	createdPath := ""
 
+	errOut := cmd.ErrOrStderr()
 	if file != "" {
+		if topic != "" || nodeType != "" || parent != "" {
+			return fmt.Errorf(i18n.T(
+				"--topic, --type, and --parent cannot be used together with --file",
+				"--topic、--type、--parent 不能与 --file 同时使用",
+			))
+		}
 		raw, err := os.ReadFile(file)
 		if err != nil {
 			return fmt.Errorf(i18n.T("failed to read file: %w", "读取文件失败: %w"), err)
@@ -87,7 +96,7 @@ func runUnsCreate(cmd *cobra.Command, args []string) error {
 			))
 		}
 		var err error
-		namespace, createdPath, err = buildNamespaceFromFlags(parent, topic, nodeType, topicType, displayName, description, alias, fields)
+		namespace, createdPath, err = buildNamespaceFromFlags(parent, topic, nodeType, topicType, displayName, description, alias, fields, errOut)
 		if err != nil {
 			return err
 		}

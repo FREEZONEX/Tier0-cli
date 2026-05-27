@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
@@ -43,13 +44,19 @@ func joinUNSPath(parent, child string) string {
 
 // normalizeCreateNodeType maps CLI-friendly type names to OpenAPI values.
 // Returns node "type" and optional "topicType" for file nodes.
-func normalizeCreateNodeType(nodeType, topicType string) (string, string, error) {
+// errOut may be nil; deprecation warnings are written to it when non-nil.
+func normalizeCreateNodeType(nodeType, topicType string, errOut io.Writer) (string, string, error) {
 	nodeType = strings.TrimSpace(nodeType)
 	topicType = strings.TrimSpace(topicType)
 	switch strings.ToLower(nodeType) {
 	case "folder", "directory", "dir", "path":
 		return "folder", "", nil
-	case "file", "object", "topic", "thing":
+	case "file", "object", "topic":
+		return "file", topicType, nil
+	case "thing":
+		if errOut != nil {
+			fmt.Fprintln(errOut, i18n.T("warning: --type thing is deprecated, use --type file instead", "警告: --type thing 已废弃，请改用 --type file"))
+		}
 		return "file", topicType, nil
 	case "metric", "action", "state":
 		if topicType == "" {
@@ -65,8 +72,8 @@ func normalizeCreateNodeType(nodeType, topicType string) (string, string, error)
 	}
 }
 
-func buildLeafNode(name, nodeType, topicType, displayName, description, alias, fieldsJSON string) (map[string]any, error) {
-	typeStr, topicTypeStr, err := normalizeCreateNodeType(nodeType, topicType)
+func buildLeafNode(name, nodeType, topicType, displayName, description, alias, fieldsJSON string, errOut io.Writer) (map[string]any, error) {
+	typeStr, topicTypeStr, err := normalizeCreateNodeType(nodeType, topicType, errOut)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +112,7 @@ func buildNamespaceTreeFromPath(fullPath string, leaf map[string]any) ([]any, er
 	}
 	segments := strings.Split(fullPath, "/")
 	for _, seg := range segments {
-		if seg == "" || strings.Contains(seg, "/") {
+		if seg == "" {
 			return nil, fmt.Errorf(i18n.T("invalid topic path segment: %q", "无效的 topic 路径段: %q"), seg)
 		}
 	}
@@ -136,7 +143,7 @@ func buildNamespaceTreeFromPath(fullPath string, leaf map[string]any) ([]any, er
 	return []any{node}, nil
 }
 
-func buildNamespaceFromFlags(parent, topic, nodeType, topicType, displayName, description, alias, fields string) ([]any, string, error) {
+func buildNamespaceFromFlags(parent, topic, nodeType, topicType, displayName, description, alias, fields string, errOut io.Writer) ([]any, string, error) {
 	fullPath := joinUNSPath(parent, topic)
 	fullPath = normalizeUNSPath(fullPath)
 	if fullPath == "" {
@@ -144,9 +151,24 @@ func buildNamespaceFromFlags(parent, topic, nodeType, topicType, displayName, de
 	}
 	segments := strings.Split(fullPath, "/")
 	leafName := segments[len(segments)-1]
-	leaf, err := buildLeafNode(leafName, nodeType, topicType, displayName, description, alias, fields)
+	leaf, err := buildLeafNode(leafName, nodeType, topicType, displayName, description, alias, fields, errOut)
 	if err != nil {
 		return nil, "", err
+	}
+	// Enforce: for file nodes the second-to-last segment must be the type folder (metric/action/state).
+	if tt, _ := leaf["topicType"].(string); tt != "" {
+		if len(segments) < 2 {
+			return nil, "", fmt.Errorf(i18n.T(
+				"path %q must include a type folder as second-to-last segment (e.g. .../metric/<name>) for --type %s",
+				"路径 %q 的倒数第二段必须是类型文件夹（如 .../metric/<name>），当前 --type 为 %s",
+			), fullPath, nodeType)
+		}
+		if got := strings.ToLower(segments[len(segments)-2]); got != tt {
+			return nil, "", fmt.Errorf(i18n.T(
+				"path %q: second-to-last segment must be %q for --type %s, got %q",
+				"路径 %q：倒数第二段应为 %q（--type %s），实际为 %q",
+			), fullPath, tt, nodeType, segments[len(segments)-2])
+		}
 	}
 	namespace, err := buildNamespaceTreeFromPath(fullPath, leaf)
 	if err != nil {
