@@ -4,141 +4,287 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-func TestParseNamespaceFile_Wrapped(t *testing.T) {
-	raw := []byte(`{"namespace":[{"name":"a","type":"folder"}]}`)
-	ns, err := parseNamespaceFile(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(ns) != 1 {
-		t.Fatalf("len=%d want 1", len(ns))
-	}
-}
+// ── resolveNodeType ───────────────────────────────────────────────────────────
 
-func TestParseNamespaceFile_Array(t *testing.T) {
-	raw := []byte(`[{"name":"a","type":"folder"}]`)
-	ns, err := parseNamespaceFile(raw)
-	if err != nil {
-		t.Fatal(err)
+func TestResolveNodeType(t *testing.T) {
+	tests := []struct {
+		nt      string
+		wantAPI string
+		wantErr bool
+	}{
+		// canonical values
+		{"topic", "topic", false},
+		{"path", "path", false},
+		// legacy aliases — still accepted
+		{"file", "topic", false},
+		{"object", "topic", false},
+		{"METRIC", "topic", false},
+		{"ACTION", "topic", false},
+		{"STATE", "topic", false},
+		{"thing", "topic", false},
+		{"FOLDER", "path", false},
+		{"folder", "path", false},
+		{"dir", "path", false},
+		// errors
+		{"", "", true},
+		{"invalid", "", true},
 	}
-	if len(ns) != 1 {
-		t.Fatalf("len=%d want 1", len(ns))
-	}
-}
-
-func TestBuildNamespaceTreeFromPath_MultiLevel(t *testing.T) {
-	leaf, err := buildLeafNode("Temperature", "METRIC", "", "", "", "", "", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ns, err := buildNamespaceTreeFromPath("Plant/Line1/Metric/Temperature", leaf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(ns) != 1 {
-		t.Fatalf("root count=%d want 1", len(ns))
-	}
-	root, ok := ns[0].(map[string]any)
-	if !ok || root["name"] != "Plant" || root["type"] != "folder" {
-		t.Fatalf("root=%v", ns[0])
-	}
-	children, ok := root["children"].([]any)
-	if !ok || len(children) != 1 {
-		t.Fatalf("children=%v", root["children"])
-	}
-	// Walk to leaf
-	node := children[0].(map[string]any)
-	for node["name"] != "Metric" {
-		ch, ok := node["children"].([]any)
-		if !ok || len(ch) != 1 {
-			t.Fatalf("unexpected node at %v", node["name"])
+	for _, tt := range tests {
+		got, err := resolveNodeType(tt.nt, nil)
+		if (err != nil) != tt.wantErr {
+			t.Errorf("resolveNodeType(%q): err=%v wantErr=%v", tt.nt, err, tt.wantErr)
+			continue
 		}
-		node = ch[0].(map[string]any)
-	}
-	leafNode := node["children"].([]any)[0].(map[string]any)
-	if leafNode["name"] != "Temperature" {
-		t.Fatalf("leaf name=%v", leafNode["name"])
-	}
-	if leafNode["type"] != "file" || leafNode["topicType"] != "metric" {
-		t.Fatalf("leaf=%v", leafNode)
+		if err == nil && got != tt.wantAPI {
+			t.Errorf("resolveNodeType(%q): got %q, want %q", tt.nt, got, tt.wantAPI)
+		}
 	}
 }
 
-func TestBuildNamespaceFromFlags_WithParent(t *testing.T) {
-	ns, fullPath, err := buildNamespaceFromFlags("Plant", "Line1/Metric/Temp", "METRIC", "", "", "", "", "", nil)
+// ── deriveTopicType ───────────────────────────────────────────────────────────
+
+func TestDeriveTopicType_Valid(t *testing.T) {
+	cases := []struct{ path, want string }{
+		{"Plant/Line1/Metric/Temperature", "metric"},
+		{"Factory1/Assembly/Line1/Station1/Metric/ProductionCount", "metric"},
+		{"X/Action/Start", "action"},
+		{"Y/State/MachineStatus", "state"},
+		// case-insensitive match
+		{"Plant/metric/Temperature", "metric"},
+		{"Plant/ACTION/StartCmd", "action"},
+	}
+	for _, c := range cases {
+		got, err := deriveTopicType(c.path)
+		if err != nil {
+			t.Errorf("deriveTopicType(%q): unexpected error: %v", c.path, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("deriveTopicType(%q): got %q, want %q", c.path, got, c.want)
+		}
+	}
+}
+
+func TestDeriveTopicType_Invalid(t *testing.T) {
+	cases := []struct {
+		path        string
+		errContains string
+	}{
+		// single segment — no parent
+		{"Temperature", "type folder"},
+		// parent is not a type folder
+		{"Station1/ProductionCount", "Metric/Action/State"},
+		{"Factory1/Assembly/Line1/Station1/ProductionCount", "Metric/Action/State"},
+	}
+	for _, c := range cases {
+		_, err := deriveTopicType(c.path)
+		if err == nil {
+			t.Errorf("deriveTopicType(%q): expected error, got nil", c.path)
+			continue
+		}
+		if !strings.Contains(strings.ToLower(err.Error()), strings.ToLower(c.errContains)) {
+			t.Errorf("deriveTopicType(%q): error %q should contain %q", c.path, err, c.errContains)
+		}
+	}
+}
+
+// ── wrapInFolderTree ──────────────────────────────────────────────────────────
+
+func TestWrapInFolderTree_SingleSegment(t *testing.T) {
+	leaf := map[string]any{"name": "Plant", "type": "path"}
+	ns, err := wrapInFolderTree("Plant", leaf)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fullPath != "Plant/Line1/Metric/Temp" {
-		t.Fatalf("fullPath=%q", fullPath)
+	if len(ns) != 1 {
+		t.Fatalf("len=%d", len(ns))
+	}
+	n := ns[0].(map[string]any)
+	if n["name"] != "Plant" {
+		t.Fatalf("name=%v", n["name"])
+	}
+}
+
+func TestWrapInFolderTree_MultiLevel(t *testing.T) {
+	leaf := map[string]any{"name": "Temperature", "type": "topic", "topicType": "metric"}
+	ns, err := wrapInFolderTree("Plant/Line1/Metric/Temperature", leaf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := ns[0].(map[string]any)
+	if root["name"] != "Plant" || root["type"] != "path" {
+		t.Fatalf("root=%v", root)
+	}
+	// Walk Plant → Line1 → Metric → Temperature
+	node := root
+	for _, seg := range []string{"Line1", "Metric"} {
+		ch := node["children"].([]any)[0].(map[string]any)
+		if ch["name"] != seg {
+			t.Fatalf("want segment %q, got %q", seg, ch["name"])
+		}
+		node = ch
+	}
+	l := node["children"].([]any)[0].(map[string]any)
+	if l["name"] != "Temperature" || l["type"] != "topic" {
+		t.Fatalf("leaf=%v", l)
+	}
+}
+
+// ── buildNamespaceFromFlags ───────────────────────────────────────────────────
+
+func TestBuildNamespaceFromFlags_MetricPath(t *testing.T) {
+	ns, path, err := buildNamespaceFromFlags(
+		"", "Plant/Line1/Metric/Temperature",
+		"topic", "", "Temp sensor", "", "",
+		`[{"name":"value","type":"float","unit":"°C"}]`,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if path != "Plant/Line1/Metric/Temperature" {
+		t.Fatalf("path=%q", path)
 	}
 	if len(ns) != 1 {
 		t.Fatal("expected single root")
 	}
 }
 
-func TestNormalizeCreateNodeType(t *testing.T) {
-	tests := []struct {
-		inType, inTopicType, wantType, wantTopicType string
-	}{
-		{"FOLDER", "", "folder", ""},
-		{"METRIC", "", "file", "metric"},
-		{"thing", "", "file", ""},
-		{"file", "action", "file", "action"},
+func TestBuildNamespaceFromFlags_WithParent(t *testing.T) {
+	_, fullPath, err := buildNamespaceFromFlags(
+		"Factory1/Assembly/Line1/Station1", "Metric/ProductionCount",
+		"topic", "", "当前产量", "", "",
+		`[{"name":"value","type":"int"}]`,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	for _, tt := range tests {
-		gotType, gotTopicType, err := normalizeCreateNodeType(tt.inType, tt.inTopicType, nil)
+	if fullPath != "Factory1/Assembly/Line1/Station1/Metric/ProductionCount" {
+		t.Fatalf("fullPath=%q", fullPath)
+	}
+}
+
+func TestBuildNamespaceFromFlags_ActionAndState(t *testing.T) {
+	cases := []struct{ topic, nt, wantTT string }{
+		{"Machine/Action/Start", "topic", "action"},
+		{"Machine/State/Status", "topic", "state"},
+		{"Machine/Metric/Speed", "topic", "metric"},
+	}
+	for _, c := range cases {
+		ns, _, err := buildNamespaceFromFlags("", c.topic, c.nt, "", "", "", "", "", nil)
 		if err != nil {
-			t.Fatalf("%s: %v", tt.inType, err)
+			t.Errorf("%q: unexpected error: %v", c.topic, err)
+			continue
 		}
-		if gotType != tt.wantType || gotTopicType != tt.wantTopicType {
-			t.Fatalf("%s: got %s/%s want %s/%s", tt.inType, gotType, gotTopicType, tt.wantType, tt.wantTopicType)
+		// Walk to leaf and check topicType
+		node := ns[0].(map[string]any)
+		for {
+			ch, ok := node["children"]
+			if !ok {
+				break
+			}
+			node = ch.([]any)[0].(map[string]any)
+		}
+		if node["topicType"] != c.wantTT {
+			t.Errorf("%q: topicType=%v, want %q", c.topic, node["topicType"], c.wantTT)
 		}
 	}
 }
 
-func TestBuildNamespaceFromFlags_TypeFolderEnforced(t *testing.T) {
-	// Missing type folder: second-to-last is "Line1", not "metric".
-	_, _, err := buildNamespaceFromFlags("", "Plant/Line1/Temperature", "METRIC", "", "", "", "", "", nil)
-	if err == nil {
-		t.Fatal("expected error for missing type folder, got nil")
-	}
-	// Only one segment: no parent folder at all.
-	_, _, err = buildNamespaceFromFlags("", "Temperature", "METRIC", "", "", "", "", "", nil)
-	if err == nil {
-		t.Fatal("expected error for single-segment metric path, got nil")
-	}
-	// Correct path should pass.
-	_, _, err = buildNamespaceFromFlags("", "Plant/Line1/Metric/Temperature", "METRIC", "", "", "", "", "", nil)
+func TestBuildNamespaceFromFlags_FolderOnly(t *testing.T) {
+	_, path, err := buildNamespaceFromFlags(
+		"", "Plant/Line1", "path", "", "Line 1", "", "", "", nil,
+	)
 	if err != nil {
-		t.Fatalf("unexpected error for valid path: %v", err)
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if path != "Plant/Line1" {
+		t.Fatalf("path=%q", path)
+	}
+}
+
+func TestBuildNamespaceFromFlags_StructuralErrors(t *testing.T) {
+	bad := []struct {
+		parent, topic, nt string
+		desc              string
+	}{
+		{"", "Factory1/Assembly/Line1/Station1/ProductionCount", "topic",
+			"leaf parent is Station1, not a type folder"},
+		{"", "ProductionCount", "topic",
+			"single segment, no type folder"},
+		{"", "", "topic",
+			"empty topic"},
+	}
+	for _, c := range bad {
+		_, _, err := buildNamespaceFromFlags(c.parent, c.topic, c.nt, "", "", "", "", "", nil)
+		if err == nil {
+			t.Errorf("expected error (%s), got nil", c.desc)
+		}
+	}
+}
+
+// ── parseNamespaceFile ────────────────────────────────────────────────────────
+
+func TestParseNamespaceFile_PathTopicPassThrough(t *testing.T) {
+	// path/topic are passed through as-is; the backend accepts both natively.
+	raw := []byte(`{"namespace":[
+		{"name":"Line1","type":"path","children":[
+			{"name":"Metric","type":"path","children":[
+				{"name":"Count","type":"topic","topicType":"metric"}
+			]}
+		]}
+	]}`)
+	ns, err := parseNamespaceFile(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := ns[0].(map[string]any)
+	if root["type"] != "path" {
+		t.Errorf("path should be preserved: got %q", root["type"])
+	}
+	metric := root["children"].([]any)[0].(map[string]any)
+	if metric["type"] != "path" {
+		t.Errorf("nested path should be preserved: got %q", metric["type"])
+	}
+	leaf := metric["children"].([]any)[0].(map[string]any)
+	if leaf["type"] != "topic" {
+		t.Errorf("topic should be preserved: got %q", leaf["type"])
+	}
+}
+
+func TestParseNamespaceFile_Wrapped(t *testing.T) {
+	// "folder" is the legacy API name; backend accepts it, so it must pass through.
+	ns, err := parseNamespaceFile([]byte(`{"namespace":[{"name":"a","type":"folder"}]}`))
+	if err != nil || len(ns) != 1 {
+		t.Fatalf("err=%v len=%d", err, len(ns))
+	}
+}
+
+func TestParseNamespaceFile_BareArray(t *testing.T) {
+	// "folder" legacy value must pass through unchanged.
+	ns, err := parseNamespaceFile([]byte(`[{"name":"a","type":"folder"}]`))
+	if err != nil || len(ns) != 1 {
+		t.Fatalf("err=%v len=%d", err, len(ns))
 	}
 }
 
 func TestParseNamespaceFile_FromDisk(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "structure.json")
-	body := map[string]any{
-		"namespace": []any{
-			map[string]any{"name": "factory", "type": "folder"},
-		},
-	}
-	raw, _ := json.Marshal(body)
-	if err := os.WriteFile(path, raw, 0o644); err != nil {
+	f := filepath.Join(dir, "ns.json")
+	raw, _ := json.Marshal(map[string]any{
+		"namespace": []any{map[string]any{"name": "x", "type": "folder"}},
+	})
+	if err := os.WriteFile(f, raw, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	data, _ := os.ReadFile(f)
 	ns, err := parseNamespaceFile(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(ns) != 1 {
-		t.Fatalf("len=%d", len(ns))
+	if err != nil || len(ns) != 1 {
+		t.Fatalf("err=%v len=%d", err, len(ns))
 	}
 }

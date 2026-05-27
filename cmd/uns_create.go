@@ -14,21 +14,33 @@ var unsCreateCmd = &cobra.Command{
 	Use:   "create",
 	Short: i18n.T("Create UNS namespace nodes", "创建 UNS 命名空间节点"),
 	Long: i18n.T(
-		"Create a single UNS namespace node.\n\n"+
-			"Path segments before the last one are auto-created as folders.\n"+
-			"Use --parent to create under an existing path.\n"+
-			"For batch or complex structures use --file.\n\n"+
+		"Create UNS namespace nodes from a path or a JSON file.\n\n"+
+			"PATH RULE for topic (file) nodes:\n"+
+			"  The segment immediately before the leaf must be a type folder: Metric, Action, or State.\n"+
+			"  The topicType is derived from that segment automatically — nothing is inserted.\n\n"+
+			"  Valid:   Plant/Line1/Metric/Temperature\n"+
+			"  Valid:   Machine/Action/Start\n"+
+			"  Invalid: Plant/Line1/Temperature  (no type folder before leaf)\n\n"+
+			"Use --parent to prepend a common path prefix to --topic.\n"+
+			"Use --file for batch or complex structures.\n\n"+
 			"Examples:\n"+
-			"  tier0 uns create --topic Plant/Line1/Metric/Temperature --type METRIC\n"+
-			"  tier0 uns create --parent Plant --topic Line1 --type FOLDER --display-name 'Line 1'\n"+
+			"  tier0 uns create --topic Plant/Line1/Metric/Temperature --type topic\n"+
+			"  tier0 uns create --parent Factory1/Line1/Station1 --topic Metric/ProductionCount --type topic\n"+
+			"  tier0 uns create --topic Plant/Line1 --type path --display-name 'Line 1'\n"+
 			"  tier0 uns create --file namespace.json",
-		"创建单个 UNS 命名空间节点。\n\n"+
-			"路径中间段自动建为 folder。\n"+
-			"可用 --parent 在已有路径下创建。\n"+
+		"创建 UNS 命名空间节点（路径模式或 JSON 文件模式）。\n\n"+
+			"topic 节点的路径规则：\n"+
+			"  叶子名前一段必须是类型目录：Metric、Action 或 State。\n"+
+			"  topicType 从该段自动推导——不会自动插入任何目录。\n\n"+
+			"  正确：Plant/Line1/Metric/Temperature\n"+
+			"  正确：Machine/Action/Start\n"+
+			"  错误：Plant/Line1/Temperature（叶子名前缺少类型目录）\n\n"+
+			"用 --parent 为 --topic 拼接公共前缀路径。\n"+
 			"批量或复杂结构请用 --file。\n\n"+
-			"示例:\n"+
-			"  tier0 uns create --topic Plant/Line1/Metric/Temperature --type METRIC\n"+
-			"  tier0 uns create --parent Plant --topic Line1 --type FOLDER --display-name 'Line 1'\n"+
+			"示例：\n"+
+			"  tier0 uns create --topic Plant/Line1/Metric/Temperature --type topic\n"+
+			"  tier0 uns create --parent Factory1/Line1/Station1 --topic Metric/ProductionCount --type topic\n"+
+			"  tier0 uns create --topic Plant/Line1 --type path --display-name 'Line 1'\n"+
 			"  tier0 uns create --file namespace.json",
 	),
 	RunE: runUnsCreate,
@@ -40,7 +52,7 @@ func init() {
 	unsCreateCmd.Flags().String("parent", "",
 		i18n.T("Parent path prefix (optional, combined with --topic)", "父路径前缀（可选，与 --topic 拼接）"))
 	unsCreateCmd.Flags().String("type", "",
-		i18n.T("Node type (required if not using --file): FOLDER, METRIC/ACTION/STATE, file, folder", "节点类型（不使用 --file 时必填）：FOLDER、METRIC/ACTION/STATE、file、folder"))
+		i18n.T("Node type: 'path' (folder) or 'topic' (data point)", "节点类型：path（文件夹）或 topic（数据点）"))
 	unsCreateCmd.Flags().StringP("display-name", "d", "",
 		i18n.T("Display name", "显示名称"))
 	unsCreateCmd.Flags().String("description", "",
@@ -50,7 +62,7 @@ func init() {
 	unsCreateCmd.Flags().StringP("file", "f", "",
 		i18n.T("Read namespace definition from JSON file ({\"namespace\":[]} or bare array)", "从 JSON 文件读取命名空间定义（支持 {\"namespace\":[]} 或裸数组）"))
 	unsCreateCmd.Flags().String("topic-type", "",
-		i18n.T("Topic type for file nodes (metric, action, state)", "文件节点的 Topic 类型（metric、action、state）"))
+		i18n.T("Deprecated: topic type is now derived from the path (Metric/Action/State folder before leaf)", "已废弃：topic 类型现在从路径中自动推导（叶子名前的 Metric/Action/State 目录）"))
 	unsCreateCmd.Flags().String("fields", "",
 		i18n.T("Schema fields JSON array (e.g. '[{\"name\":\"temp\",\"type\":\"float\"}]')", "Schema 字段 JSON 数组"))
 }

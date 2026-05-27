@@ -9,7 +9,29 @@ import (
 	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
 )
 
-// parseNamespaceFile accepts either {"namespace":[...]} or a bare [...] array.
+// ── path utilities ────────────────────────────────────────────────────────────
+
+func normalizeUNSPath(p string) string {
+	return strings.Trim(strings.ReplaceAll(p, "\\", "/"), "/")
+}
+
+func joinUNSPath(parent, child string) string {
+	p, c := normalizeUNSPath(parent), normalizeUNSPath(child)
+	switch {
+	case p == "":
+		return c
+	case c == "":
+		return p
+	default:
+		return p + "/" + c
+	}
+}
+
+// ── file parsing ──────────────────────────────────────────────────────────────
+
+// parseNamespaceFile accepts {"namespace":[...]} or a bare [...] array.
+// The backend accepts path/topic and folder/file interchangeably, so no
+// translation is needed — the JSON is forwarded as-is.
 func parseNamespaceFile(raw []byte) ([]any, error) {
 	var wrapped struct {
 		Namespace []any `json:"namespace"`
@@ -24,62 +46,123 @@ func parseNamespaceFile(raw []byte) ([]any, error) {
 	return arr, nil
 }
 
-func normalizeUNSPath(path string) string {
-	path = strings.ReplaceAll(path, "\\", "/")
-	return strings.Trim(path, "/")
+// ── node type resolution ──────────────────────────────────────────────────────
+
+// typeFolders is the set of valid UNS type-folder names (lower-cased key → display name).
+// These must appear as the second-to-last path segment for every file (topic) node.
+var typeFolders = map[string]string{
+	"metric": "Metric",
+	"action": "Action",
+	"state":  "State",
 }
 
-func joinUNSPath(parent, child string) string {
-	parent = normalizeUNSPath(parent)
-	child = normalizeUNSPath(child)
-	switch {
-	case parent == "":
-		return child
-	case child == "":
-		return parent
-	default:
-		return parent + "/" + child
-	}
-}
-
-// normalizeCreateNodeType maps CLI-friendly type names to OpenAPI values.
-// Returns node "type" and optional "topicType" for file nodes.
-// errOut may be nil; deprecation warnings are written to it when non-nil.
-func normalizeCreateNodeType(nodeType, topicType string, errOut io.Writer) (string, string, error) {
-	nodeType = strings.TrimSpace(nodeType)
-	topicType = strings.TrimSpace(topicType)
-	switch strings.ToLower(nodeType) {
-	case "folder", "directory", "dir", "path":
-		return "folder", "", nil
-	case "file", "object", "topic":
-		return "file", topicType, nil
-	case "thing":
+// resolveNodeType maps the --type flag to the API node type.
+//
+//   --type path   → "path"  node  (a directory in the UNS tree)
+//   --type topic  → "topic" node  (a data point / topic)
+//
+// Legacy aliases are accepted with a deprecation warning so existing scripts
+// keep working during migration.
+func resolveNodeType(nodeTypeFlag string, errOut io.Writer) (apiType string, err error) {
+	warn := func(old, new string) {
 		if errOut != nil {
-			fmt.Fprintln(errOut, i18n.T("warning: --type thing is deprecated, use --type file instead", "警告: --type thing 已废弃，请改用 --type file"))
+			fmt.Fprintln(errOut, i18n.T(
+				"warning: --type "+old+" is deprecated, use --type "+new,
+				"警告: --type "+old+" 已废弃，请改用 --type "+new,
+			))
 		}
-		return "file", topicType, nil
+	}
+
+	switch strings.ToLower(strings.TrimSpace(nodeTypeFlag)) {
+	case "topic":
+		return "topic", nil
+	case "path":
+		return "path", nil
+
+	// ── legacy aliases (kept for backward compatibility) ──────────────────
+	case "file", "object":
+		warn(nodeTypeFlag, "topic")
+		return "topic", nil
 	case "metric", "action", "state":
-		if topicType == "" {
-			topicType = strings.ToLower(nodeType)
-		}
-		return "file", topicType, nil
+		warn(nodeTypeFlag, "topic")
+		return "topic", nil
+	case "thing":
+		warn("thing", "topic")
+		return "topic", nil
+	case "folder", "directory", "dir":
+		warn(nodeTypeFlag, "path")
+		return "path", nil
+
+	case "":
+		return "", fmt.Errorf(i18n.T(
+			"--type is required: use 'path' for folders or 'topic' for data points",
+			"--type 为必填：文件夹用 path，数据点用 topic",
+		))
 	default:
-		if nodeType == "" {
-			return "", "", fmt.Errorf(i18n.T("invalid --type", "无效的 --type"))
-		}
-		// Pass through for forward compatibility (e.g. TOPIC).
-		return nodeType, topicType, nil
+		return "", fmt.Errorf(i18n.T(
+			"--type %q is not valid: use 'path' for folders or 'topic' for data points",
+			"--type %q 无效：文件夹用 path，数据点用 topic",
+		), nodeTypeFlag)
 	}
 }
 
-func buildLeafNode(name, nodeType, topicType, displayName, description, alias, fieldsJSON string, errOut io.Writer) (map[string]any, error) {
-	typeStr, topicTypeStr, err := normalizeCreateNodeType(nodeType, topicType, errOut)
-	if err != nil {
-		return nil, err
+// ── structural validation ─────────────────────────────────────────────────────
+
+// deriveTopicType enforces the UNS structural rule and returns the topicType.
+//
+// Rule: for every file (topic) node the segment immediately before the leaf
+// must be a type folder — one of Metric, Action, or State.
+// The topicType is derived from that segment; it is never injected or guessed.
+//
+// Valid:
+//
+//	.../Metric/ProductionCount   → topicType "metric"
+//	.../Action/StartCommand      → topicType "action"
+//	.../State/MachineStatus      → topicType "state"
+//
+// Invalid:
+//
+//	.../Station1/ProductionCount  (Station1 is not a type folder)
+//	ProductionCount               (no parent segment at all)
+func deriveTopicType(fullPath string) (topicType string, err error) {
+	segments := strings.Split(normalizeUNSPath(fullPath), "/")
+	if len(segments) < 2 {
+		return "", fmt.Errorf(i18n.T(
+			"path %q: a topic node needs at least two segments — "+
+				"a type folder (Metric/Action/State) immediately before the leaf name.\n"+
+				"  Example: .../Metric/%s",
+			"路径 %q：topic 节点至少需要两段——类型目录（Metric/Action/State）+ 叶子名称。\n"+
+				"  示例：.../Metric/%s",
+		), fullPath, segments[len(segments)-1])
 	}
+
+	parent := strings.ToLower(segments[len(segments)-2])
+	if _, ok := typeFolders[parent]; !ok {
+		suggested := strings.Join(segments[:len(segments)-1], "/") +
+			"/Metric/" + segments[len(segments)-1]
+		return "", fmt.Errorf(i18n.T(
+			"path %q: segment before leaf must be a type folder (Metric/Action/State), got %q.\n"+
+				"  Type folders are never inserted automatically — include one in your path.\n"+
+				"  Example: %s",
+			"路径 %q：叶子名前一段必须是类型目录（Metric/Action/State），当前为 %q。\n"+
+				"  类型目录不会自动插入，请在路径中包含它。\n"+
+				"  示例：%s",
+		), fullPath, segments[len(segments)-2], suggested)
+	}
+
+	return parent, nil // e.g. "metric", "action", "state"
+}
+
+// ── namespace tree construction ───────────────────────────────────────────────
+
+// buildLeafNode constructs the JSON node map for the leaf (topic or folder).
+func buildLeafNode(name, apiType, topicType, displayName, description, alias, fieldsJSON string) (map[string]any, error) {
 	node := map[string]any{
 		"name": name,
-		"type": typeStr,
+		"type": apiType,
+	}
+	if topicType != "" {
+		node["topicType"] = topicType
 	}
 	if displayName != "" {
 		node["displayName"] = displayName
@@ -90,89 +173,100 @@ func buildLeafNode(name, nodeType, topicType, displayName, description, alias, f
 	if alias != "" {
 		node["alias"] = alias
 	}
-	if topicTypeStr != "" {
-		node["topicType"] = topicTypeStr
-	}
 	if fieldsJSON != "" {
-		var fieldList []any
-		if err := json.Unmarshal([]byte(fieldsJSON), &fieldList); err != nil {
-			return nil, fmt.Errorf(i18n.T("invalid fields JSON: %w", "fields JSON 无效: %w"), err)
+		var fields []any
+		if err := json.Unmarshal([]byte(fieldsJSON), &fields); err != nil {
+			return nil, fmt.Errorf(i18n.T("--fields JSON is invalid: %w", "--fields JSON 无效: %w"), err)
 		}
-		node["fields"] = fieldList
+		node["fields"] = fields
 	}
 	return node, nil
 }
 
-// buildNamespaceTreeFromPath turns "Plant/Line1/Metric/Temp" into a nested folder tree
-// with the leaf node carrying metadata from leaf.
-func buildNamespaceTreeFromPath(fullPath string, leaf map[string]any) ([]any, error) {
-	fullPath = normalizeUNSPath(fullPath)
-	if fullPath == "" {
+// wrapInFolderTree wraps the leaf in a nested path chain for fullPath.
+// Every segment except the last becomes a path node; the last segment is the leaf.
+//
+// Example: fullPath = "Plant/Line1/Metric/Temp", leaf = {name:"Temp", type:"topic"} →
+//
+//	[{name:"Plant", type:"path", children:[
+//	  {name:"Line1", type:"path", children:[
+//	    {name:"Metric", type:"path", children:[
+//	      {name:"Temp", type:"topic", …}
+//	    ]}
+//	  ]}
+//	]}]
+func wrapInFolderTree(fullPath string, leaf map[string]any) ([]any, error) {
+	path := normalizeUNSPath(fullPath)
+	if path == "" {
 		return nil, fmt.Errorf(i18n.T("topic path is empty", "topic 路径为空"))
 	}
-	segments := strings.Split(fullPath, "/")
+	segments := strings.Split(path, "/")
 	for _, seg := range segments {
 		if seg == "" {
-			return nil, fmt.Errorf(i18n.T("invalid topic path segment: %q", "无效的 topic 路径段: %q"), seg)
+			return nil, fmt.Errorf(i18n.T("topic path contains an empty segment", "topic 路径包含空段"))
 		}
 	}
-	leafName, _ := leaf["name"].(string)
-	if leafName == "" {
-		leafName = segments[len(segments)-1]
-	}
-	if leafName != segments[len(segments)-1] {
-		return nil, fmt.Errorf(i18n.T(
-			"leaf name %q does not match last path segment %q",
-			"叶子节点名 %q 与路径最后一段 %q 不一致",
-		), leafName, segments[len(segments)-1])
-	}
+	// Authoritative: leaf name is always the last path segment.
 	leaf["name"] = segments[len(segments)-1]
 
 	if len(segments) == 1 {
 		return []any{leaf}, nil
 	}
 
-	node := any(leaf)
+	var node any = leaf
 	for i := len(segments) - 2; i >= 0; i-- {
 		node = map[string]any{
 			"name":     segments[i],
-			"type":     "folder",
+			"type":     "path",
 			"children": []any{node},
 		}
 	}
 	return []any{node}, nil
 }
 
-func buildNamespaceFromFlags(parent, topic, nodeType, topicType, displayName, description, alias, fields string, errOut io.Writer) ([]any, string, error) {
-	fullPath := joinUNSPath(parent, topic)
-	fullPath = normalizeUNSPath(fullPath)
+// ── public entry point ────────────────────────────────────────────────────────
+
+// buildNamespaceFromFlags is the single entry point for the --topic mode.
+// It validates all flags, resolves the node type, enforces the structural rule,
+// and returns the namespace array ready to POST plus the resolved full path.
+//
+// For file (topic) nodes the topicType is derived from the path structure:
+// the segment before the leaf must be Metric, Action, or State.
+func buildNamespaceFromFlags(
+	parent, topic,
+	nodeTypeFlag, _ /* topic-type flag deprecated */,
+	displayName, description, alias, fieldsJSON string,
+	errOut io.Writer,
+) (namespace []any, fullPath string, err error) {
+	fullPath = normalizeUNSPath(joinUNSPath(parent, topic))
 	if fullPath == "" {
-		return nil, "", fmt.Errorf(i18n.T("topic path is empty", "topic 路径为空"))
+		return nil, "", fmt.Errorf(i18n.T("--topic is required", "--topic 为必填"))
 	}
+
+	apiType, err := resolveNodeType(nodeTypeFlag, errOut)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// For topic nodes: derive topicType from path (enforces structural rule).
+	topicType := ""
+	if apiType == "topic" {
+		topicType, err = deriveTopicType(fullPath)
+		if err != nil {
+			return nil, "", err
+		}
+	}
+
 	segments := strings.Split(fullPath, "/")
-	leafName := segments[len(segments)-1]
-	leaf, err := buildLeafNode(leafName, nodeType, topicType, displayName, description, alias, fields, errOut)
+	leaf, err := buildLeafNode(
+		segments[len(segments)-1],
+		apiType, topicType,
+		displayName, description, alias, fieldsJSON,
+	)
 	if err != nil {
 		return nil, "", err
 	}
-	// Enforce: for file nodes the second-to-last segment must be the type folder (metric/action/state).
-	if tt, _ := leaf["topicType"].(string); tt != "" {
-		if len(segments) < 2 {
-			return nil, "", fmt.Errorf(i18n.T(
-				"path %q must include a type folder as second-to-last segment (e.g. .../metric/<name>) for --type %s",
-				"路径 %q 的倒数第二段必须是类型文件夹（如 .../metric/<name>），当前 --type 为 %s",
-			), fullPath, nodeType)
-		}
-		if got := strings.ToLower(segments[len(segments)-2]); got != tt {
-			return nil, "", fmt.Errorf(i18n.T(
-				"path %q: second-to-last segment must be %q for --type %s, got %q",
-				"路径 %q：倒数第二段应为 %q（--type %s），实际为 %q",
-			), fullPath, tt, nodeType, segments[len(segments)-2])
-		}
-	}
-	namespace, err := buildNamespaceTreeFromPath(fullPath, leaf)
-	if err != nil {
-		return nil, "", err
-	}
-	return namespace, fullPath, nil
+
+	namespace, err = wrapInFolderTree(fullPath, leaf)
+	return namespace, fullPath, err
 }
