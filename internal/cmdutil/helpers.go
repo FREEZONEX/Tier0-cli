@@ -83,29 +83,62 @@ func JSONString(v any) string {
 	return string(b)
 }
 
-// CheckOK parses the standard backend envelope {"code":N,"msg":"..."} and returns
-// an error if the backend signals a business-logic failure.
+// CheckResponse is the single entry-point for validating any API response.
+// It performs two checks in order:
 //
-// The backend (unitedrhino/go-zero convention) uses:
-//   - code 200  → success
-//   - code 0    → field absent / zero-valued, treat as success
-//   - anything else (400, 500, …) → failure
+//  1. Outer envelope: {"code":N,"msg":"..."} — non-200/non-0 code signals failure.
+//  2. Partial-success results: {"data":{"results":[{"error":{"code":N,...}}]}} —
+//     batch endpoints return HTTP 200 even when individual items fail; this
+//     detects per-item errors and surfaces them as a combined error message.
 //
-// HTTP-level errors (4xx/5xx status) are already handled by DoAPI; this catches
-// the cases where the server responds HTTP 200 but embeds an error in the body.
-func CheckOK(resp string) error {
-	var rv struct {
+// All mutation commands should call CheckResponse instead of CheckOK.
+func CheckResponse(resp string) error {
+	// Step 1 — outer envelope check.
+	var outer struct {
 		Code int    `json:"code"`
 		Msg  string `json:"msg"`
 	}
-	if err := json.Unmarshal([]byte(resp), &rv); err != nil {
-		return nil // not a standard envelope, assume OK
+	if err := json.Unmarshal([]byte(resp), &outer); err == nil {
+		if outer.Code != 0 && outer.Code != 200 {
+			return apierr.New(outer.Code, resp)
+		}
 	}
-	if rv.Code != 0 && rv.Code != 200 {
-		return apierr.New(rv.Code, resp)
+
+	// Step 2 — per-item results check (partial-success batch pattern).
+	var envelope struct {
+		Data struct {
+			Results []struct {
+				Topic string `json:"topic"`
+				Name  string `json:"name"`
+				Error *struct {
+					Code    int    `json:"code"`
+					Message string `json:"message"`
+				} `json:"error"`
+			} `json:"results"`
+		} `json:"data"`
 	}
-	return nil
+	if err := json.Unmarshal([]byte(resp), &envelope); err != nil {
+		return nil
+	}
+	var errs []string
+	for _, r := range envelope.Data.Results {
+		if r.Error != nil && r.Error.Code != 0 && r.Error.Code != 200 {
+			label := r.Topic
+			if label == "" {
+				label = r.Name
+			}
+			errs = append(errs, fmt.Sprintf("%s: %s (code %d)", label, r.Error.Message, r.Error.Code))
+		}
+	}
+	if len(errs) == 0 {
+		return nil
+	}
+	combined := strings.Join(errs, "; ")
+	return apierr.New(400, fmt.Sprintf(`{"code":400,"msg":"%s"}`, strings.ReplaceAll(combined, `"`, `'`)))
 }
+
+// CheckOK is an alias for CheckResponse kept for backward compatibility.
+func CheckOK(resp string) error { return CheckResponse(resp) }
 
 // ExtractData unwraps the standard backend envelope {"code":N,"msg":"...","data":{...}}
 // and returns the raw JSON of the "data" field.
