@@ -4,12 +4,52 @@ All notable changes to Tier0 CLI are documented here.
 
 ---
 
-## Unreleased
+## [v0.5.0] — 2026-06-01
 
 ### ✨ Features
 
-- **auth whoami**：新增 `tier0 auth whoami`，用于查看当前 API Key 绑定的用户、Workspace、Key 类型、角色和权限
-- **flow nodes**：新增 `tier0 flow nodes --source|--event`，用于查询 SourceFlow / EventFlow 当前实际可用的 Node-RED 节点类型
+- **结构化错误分类体系**：全面引入 8 类语义化错误，每类对应稳定的 shell exit code，AI Agent 和脚本可直接按 `error.type` 分支处理
+
+  | `error.type` | exit | 场景 |
+  |---|---|---|
+  | `validation` | 2 | 参数错误、Flag 缺失 |
+  | `authentication` | 3 | API Key 未配置或过期 |
+  | `authorization` | 3 | 权限不足 |
+  | `config` | 3 | 配置文件缺失或 base URL 未设置 |
+  | `network` | 4 | 网络超时、连接失败（可自动重试） |
+  | `api` | 1 | 服务端错误 |
+  | `internal` | 5 | CLI 内部异常 |
+  | `confirmation` | 10 | 高危操作需 `--yes` 确认 |
+
+- **统一 JSON 错误 envelope**：所有错误路径（API 错误、网络错误、配置错误、认证错误）现在输出同一结构，新增 `hint_command` 和 `retryable` 字段
+
+  ```json
+  {
+    "ok": false,
+    "error": {
+      "type": "authentication",
+      "code": 401,
+      "message": "API Key is missing or expired.",
+      "hint": "Authenticate first.",
+      "hint_command": "tier0 login",
+      "retryable": false
+    }
+  }
+  ```
+
+- **网络错误自动标记可重试**：`network` 类错误携带 `"retryable": true`，AI Agent 可据此驱动自动重试逻辑
+
+- **请求追踪头**：所有 API 请求自动携带 `X-Tier0-Source: tier0-cli`，便于后端日志按来源过滤
+
+- **auth whoami**：新增 `tier0 auth whoami`，查看当前 API Key 绑定的用户、Workspace、Key 类型、角色和权限
+
+- **flow nodes**：新增 `tier0 flow nodes --source|--event`，查询 SourceFlow / EventFlow 当前实际可用的 Node-RED 节点类型
+
+### 🛠 Improvements
+
+- **login Device Flow 错误分类**：登录轮询失败（网络抖动 / setup code 过期 / 授权被拒 / 10 分钟超时）现在分别归入对应 Category，exit code 语义化
+- **Cobra 错误静默**：根命令加 `SilenceErrors: true`，避免同一错误被 Cobra + HandleCommandError + main 三层重复打印到 stderr
+- **exit code 精确化**：认证/配置/权限类错误统一 exit 3；网络错误 exit 4；之前所有非高危错误一律 exit 1
 
 ---
 
