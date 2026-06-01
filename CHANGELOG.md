@@ -53,6 +53,49 @@ All notable changes to Tier0 CLI are documented here.
 
 ---
 
+## [v0.4.16] — 2026-05-27
+
+### 🛠 Improvements
+
+- **release**：新增 `scripts/release.sh` 自动化发布脚本，支持一键打包 + 发布 GitHub Release + npm publish
+
+---
+
+## [v0.4.15] — 2026-05-27
+
+### ✨ Features
+
+- **uns create `--type` 简化**：`--type` 现在只接受 `path`（目录）和 `topic`（数据点），旧值 `METRIC` / `ACTION` / `STATE` / `file` / `folder` 仍可用但会打印废弃警告
+- **topicType 自动推导**：无需手动指定 `--topic-type`，CLI 自动从路径倒数第二段（`Metric` / `Action` / `State`）推导，更简洁
+
+  ```bash
+  # 路径含 Metric 自动推导 topicType=metric
+  tier0 uns create --topic Plant/Line1/Metric/Temperature --type topic \
+    --fields '[{"name":"value","type":"float","unit":"°C"}]'
+  ```
+
+### 🐛 Bug Fixes
+
+- **uns create**：修复多层路径展开时中间 folder 节点未正确生成的问题
+- **uns create**：修复 `--file` 接受裸数组 `[...]` 时解析失败的问题（现在同时支持 `{"namespace":[...]}` 和裸数组两种格式）
+
+---
+
+## [v0.4.14] — 2026-05-27
+
+### ✨ Features
+
+- **uns create `--parent`**：新增 `--parent` 标志，支持在已有路径前缀下只建子节点，避免重复写完整路径
+
+  ```bash
+  tier0 uns create --parent Plant/Line1 --topic Metric/Temperature --type topic
+  ```
+
+- **uns create 批量错误上报**：`--file` 批量创建时逐项检查 `data.results[i].success`，部分失败不再静默，会完整报告哪些节点创建失败及原因
+- **CheckResponse 批量校验**：新增通用批量响应校验，适用于 uns read / write / history / create 等所有返回 `data.results[]` 的接口
+
+---
+
 ## [v0.4.13] — 2026-05-26
 
 ### ✨ Features
