@@ -18,7 +18,8 @@ var rootCmd = &cobra.Command{
 		"tier0 — Tier0 Cloud Platform CLI\n\nManage UNS topics, Node-RED flows, skills, and more.",
 		"tier0 — Tier0 云平台命令行工具\n\n管理 UNS 点位、Node-RED Flow、Skills 等。",
 	),
-	SilenceUsage: true,
+	SilenceUsage:  true,
+	SilenceErrors: true, // main() owns all stderr output; prevent Cobra double-printing
 	Example: i18n.T(
 		`  tier0 config --base-url https://tier0.dev
   tier0 login

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/apierr"
+	"github.com/FREEZONEX/Tier0-cli/internal/errs"
 )
 
 // Client HTTP API 客户端
@@ -46,10 +47,11 @@ func (c *Client) DoAPI(ctx context.Context, endpoint, method, body string, debug
 
 	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
 	if err != nil {
-		return "", fmt.Errorf("构建请求失败: %w", err)
+		return "", errs.New(errs.CategoryInternal, 0, "failed to build request: "+err.Error())
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Tier0-Source", "tier0-cli")
 	if c.apiKey != "" {
 		req.Header.Set("x-api-key", c.apiKey)
 	}
@@ -73,13 +75,15 @@ func (c *Client) DoAPI(ctx context.Context, endpoint, method, body string, debug
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("发送请求失败: %w", err)
+		return "", errs.New(errs.CategoryNetwork, 0, "request failed: "+err.Error()).
+			WithHint("Check network connectivity and the base URL.", "tier0 config").
+			WithRetryable()
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("读取响应失败: %w", err)
+		return "", errs.New(errs.CategoryNetwork, 0, "failed to read response: "+err.Error()).WithRetryable()
 	}
 
 	if debug {

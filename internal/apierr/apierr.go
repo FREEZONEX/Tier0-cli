@@ -6,8 +6,9 @@ package apierr
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
+
+	"github.com/FREEZONEX/Tier0-cli/internal/errs"
 )
 
 // APIError is a structured error returned by the backend API.
@@ -26,40 +27,54 @@ type APIError struct {
 
 func (e *APIError) Error() string {
 	if e.Hint != "" {
-		return fmt.Sprintf("HTTP %d: %s — %s", e.HTTPStatus, e.Message, e.Hint)
+		return e.Message + " — " + e.Hint
 	}
-	return fmt.Sprintf("HTTP %d: %s", e.HTTPStatus, e.Message)
+	return e.Message
 }
 
-// JSONError is the JSON representation output to stderr / injected into responses.
-type JSONError struct {
-	OK    bool        `json:"ok"`
-	Error ErrorDetail `json:"error"`
+// Category returns the errs.Category corresponding to the HTTP status code.
+// This is used by the central error dispatcher to select the exit code and
+// the JSON "type" field.
+func (e *APIError) Category() errs.Category {
+	switch e.HTTPStatus {
+	case 401:
+		return errs.CategoryAuthentication
+	case 403:
+		return errs.CategoryAuthorization
+	case 400, 422:
+		return errs.CategoryValidation
+	case 404:
+		return errs.CategoryAPI
+	case 500, 501, 502, 503:
+		return errs.CategoryAPI
+	default:
+		return errs.CategoryAPI
+	}
 }
 
-// ErrorDetail carries the structured error fields.
-type ErrorDetail struct {
-	Code        int    `json:"code"`
-	Message     string `json:"message"`
-	Hint        string `json:"hint,omitempty"`
-	HintCommand string `json:"hint_command,omitempty"`
-}
-
-// Format returns the JSON representation of the error.
-func (e *APIError) Format() string {
-	je := JSONError{
+// ToEnvelope converts an APIError into the unified errs.Envelope for JSON output.
+func (e *APIError) ToEnvelope() errs.Envelope {
+	code := e.HTTPStatus
+	if e.Code != 0 {
+		code = e.Code
+	}
+	return errs.Envelope{
 		OK: false,
-		Error: ErrorDetail{
-			Code:        e.HTTPStatus,
+		Error: errs.ErrorDetail{
+			Type:        e.Category(),
+			Code:        code,
 			Message:     e.Message,
 			Hint:        e.Hint,
 			HintCommand: e.HintCommand,
+			Retryable:   e.HTTPStatus >= 500,
 		},
 	}
-	if e.Code != 0 {
-		je.Error.Code = e.Code
-	}
-	b, _ := json.Marshal(je)
+}
+
+// Format returns the JSON representation of the error (unified envelope).
+// Kept for backward compatibility; prefer ToEnvelope().Format().
+func (e *APIError) Format() string {
+	b, _ := json.Marshal(e.ToEnvelope())
 	return string(b)
 }
 

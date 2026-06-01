@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/FREEZONEX/Tier0-cli/internal/errs"
 )
 
 const (
@@ -44,30 +46,32 @@ func BuildConsoleURL(baseURL, setupCode string) string {
 
 // PollSetupCheck 轮询绑定状态
 func PollSetupCheck(ctx context.Context, baseURL, setupCode string, onPoll func(current, total int, done bool, err error)) (SetupResult, error) {
-	client := &http.Client{Timeout: 10 * time.Second}
+	httpClient := &http.Client{Timeout: 10 * time.Second}
 	url := strings.TrimRight(baseURL, "/") + "/api/core/cli-auth/status"
 
 	for i := 0; i < maxPollCount; i++ {
 		select {
 		case <-ctx.Done():
+			netErr := errs.New(errs.CategoryNetwork, 0, "login cancelled").WithRetryable()
 			if onPoll != nil {
-				onPoll(i, maxPollCount, false, ctx.Err())
+				onPoll(i, maxPollCount, false, netErr)
 			}
-			return SetupResult{}, ctx.Err()
+			return SetupResult{}, netErr
 		default:
 		}
 
 		body, _ := json.Marshal(map[string]string{"setupCode": setupCode})
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
-			return SetupResult{}, fmt.Errorf("build request: %w", err)
+			return SetupResult{}, errs.New(errs.CategoryInternal, 0, "build request: "+err.Error())
 		}
 		req.Header.Set("Content-Type", "application/json")
 
-		resp, err := client.Do(req)
+		resp, err := httpClient.Do(req)
 		if err != nil {
+			netErr := errs.New(errs.CategoryNetwork, 0, "network error: "+err.Error()).WithRetryable()
 			if onPoll != nil {
-				onPoll(i, maxPollCount, false, fmt.Errorf("网络错误: %w", err))
+				onPoll(i, maxPollCount, false, netErr)
 			}
 			time.Sleep(pollInterval)
 			continue
@@ -75,11 +79,13 @@ func PollSetupCheck(ctx context.Context, baseURL, setupCode string, onPoll func(
 
 		if resp.StatusCode == http.StatusNotFound {
 			resp.Body.Close()
-			err := fmt.Errorf("后端尚未支持 CLI 绑定功能（接口 %s 返回 404）", url)
+			cfgErr := errs.New(errs.CategoryConfig, 404,
+				"CLI auth endpoint not found ("+url+"). The server may not support Device Flow login.").
+				WithHint("Make sure the Tier0 server is up to date.", "")
 			if onPoll != nil {
-				onPoll(i, maxPollCount, false, err)
+				onPoll(i, maxPollCount, false, cfgErr)
 			}
-			return SetupResult{}, err
+			return SetupResult{}, cfgErr
 		}
 
 		var result struct {
@@ -95,8 +101,9 @@ func PollSetupCheck(ctx context.Context, baseURL, setupCode string, onPoll func(
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			resp.Body.Close()
+			netErr := errs.New(errs.CategoryNetwork, 0, "failed to decode response: "+err.Error()).WithRetryable()
 			if onPoll != nil {
-				onPoll(i, maxPollCount, false, fmt.Errorf("解析响应失败: %w", err))
+				onPoll(i, maxPollCount, false, netErr)
 			}
 			time.Sleep(pollInterval)
 			continue
@@ -104,11 +111,11 @@ func PollSetupCheck(ctx context.Context, baseURL, setupCode string, onPoll func(
 		resp.Body.Close()
 
 		if result.Code != 200 {
-			err := fmt.Errorf("setup-check failed: %s", result.Msg)
+			apiErr := errs.New(errs.CategoryAPI, result.Code, "setup-check failed: "+result.Msg)
 			if onPoll != nil {
-				onPoll(i, maxPollCount, false, err)
+				onPoll(i, maxPollCount, false, apiErr)
 			}
-			return SetupResult{}, err
+			return SetupResult{}, apiErr
 		}
 
 		switch result.Data.Status {
@@ -118,29 +125,34 @@ func PollSetupCheck(ctx context.Context, baseURL, setupCode string, onPoll func(
 			}
 			return SetupResult{APIKey: result.Data.APIKey}, nil
 		case "expired":
-			err := fmt.Errorf("绑定码已过期，请重新运行 tier0 login")
+			authErr := errs.New(errs.CategoryAuthentication, 0,
+				"setup code has expired").
+				WithHint("Start a new login flow.", "tier0 login")
 			if onPoll != nil {
-				onPoll(i, maxPollCount, false, err)
+				onPoll(i, maxPollCount, false, authErr)
 			}
-			return SetupResult{}, err
+			return SetupResult{}, authErr
 		case "denied":
-			err := fmt.Errorf("绑定被拒绝")
+			authErr := errs.New(errs.CategoryAuthorization, 0,
+				"authorization was denied by the user")
 			if onPoll != nil {
-				onPoll(i, maxPollCount, false, err)
+				onPoll(i, maxPollCount, false, authErr)
 			}
-			return SetupResult{}, err
+			return SetupResult{}, authErr
 		}
 
-		// pending，继续轮询
+		// pending — continue polling
 		if onPoll != nil {
 			onPoll(i, maxPollCount, false, nil)
 		}
 		time.Sleep(pollInterval)
 	}
 
-	err := fmt.Errorf("绑定超时（%d 分钟），请重新运行 tier0 login", maxPollCount*5/60)
+	timeoutErr := errs.New(errs.CategoryAuthentication, 0,
+		"login timed out after 10 minutes").
+		WithHint("Re-run to start a new Device Flow.", "tier0 login")
 	if onPoll != nil {
-		onPoll(maxPollCount, maxPollCount, false, err)
+		onPoll(maxPollCount, maxPollCount, false, timeoutErr)
 	}
-	return SetupResult{}, err
+	return SetupResult{}, timeoutErr
 }
