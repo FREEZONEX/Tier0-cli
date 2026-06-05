@@ -276,6 +276,22 @@ npx skills remove FREEZONEX/Tier0-skill
 | [v0.2.0](https://github.com/FREEZONEX/Tier0-cli/releases/tag/v0.2.0) | 2026-05-18 | 新增 `upgrade`、`skills` 子命令；Release 包预装 skills 文档 |
 | [v0.1.0](https://github.com/FREEZONEX/Tier0-cli/releases/tag/v0.1.0) | 2026-05-17 | 初始版本：Device Flow 认证、UNS API 调用、config 管理 |
 
+## 开发 / Contributing
+
+### Skill 示例命令验证
+
+`cmd/skillexample_test.go` 会扫描同级 `Tier0-skill/` 仓库中所有 `.md` 文件，提取每条 `tier0 ...` 示例，并对照真实 cobra 命令树校验子命令路径和 flag 合法性。修改 CLI 命令（重命名子命令或 flag）后必须同步更新 skill 文档，否则该测试失败。
+
+```bash
+go test ./cmd/... -run TestSkillExampleCommands -v
+```
+
+### 运行所有单元测试
+
+```bash
+go test ./...
+```
+
 ## 发布流程
 
 ### 两层分发说明
