@@ -1,3 +1,11 @@
+// Run this test:
+//
+//	go test ./cmd/... -run TestSkillExampleCommands -v
+//
+// The test scans every *.md under the sibling Tier0-skill directory, extracts
+// all "tier0 ..." invocations, and validates each command path and flag
+// against the live cobra tree. Any unknown command or unrecognised flag is
+// reported as a test failure.
 package cmd
 
 import (
