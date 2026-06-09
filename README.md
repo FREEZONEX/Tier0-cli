@@ -80,6 +80,13 @@ tier0 api /openapi/v1/uns/read --body '{"topics":["demo"]}'
 
 # 浏览命名空间
 tier0 api /openapi/v1/uns/browse --body '{"path":"/"}'
+
+# 上传 / 查询 UNS 附件
+tier0 uns attachments upload --uns-id 10001 --file manual.pdf
+tier0 uns attachments list --uns-id 10001
+
+# 绑定 UNS 节点到 SourceFlow
+tier0 uns bind-flow --uns-id 10001 --flow-id 20001
 ```
 
 ### 查看当前 API Key
@@ -125,6 +132,9 @@ tier0 flow create --name "alert-handler"    --event
 
 # 更新 Flow（名称、描述、收藏）
 tier0 flow update --id 1 --name "new-name" --favorite
+
+# 绑定 UNS 节点到 SourceFlow（flow-id 使用上面列表里的业务主键 ID）
+tier0 uns bind-flow --uns-id 10001 --flow-id 1
 
 # 删除 Flow（支持多个 ID）
 tier0 flow delete --id 1 --id 2
@@ -259,7 +269,7 @@ npx skills remove FREEZONEX/Tier0-skill
 
 | Version | Date | Notes |
 |---------|------|-------|
-| Unreleased | — | 新增 `tier0 auth whoami` 和 `tier0 flow nodes` |
+| Unreleased | — | 新增 `tier0 auth whoami`、`tier0 flow nodes`、`tier0 uns attachments`、`tier0 uns bind-flow`，`tier0 uns create` 支持 `--persistence` |
 | [v0.4.11](https://github.com/FREEZONEX/Tier0-cli/releases/tag/v0.4.11) | 2026-05-26 | 修复写操作忽略后端业务错误的问题 |
 | [v0.4.10](https://github.com/FREEZONEX/Tier0-cli/releases/tag/v0.4.10) | 2026-05-26 | 新增 `tier0 config --api-key` 直接设置 API Key |
 | [v0.4.9](https://github.com/FREEZONEX/Tier0-cli/releases/tag/v0.4.9) | 2026-05-26 | 新增 `tier0 uninstall`；修复安装版本错误（直接用 npm 包版本）；修复 release.sh JSON 400 |

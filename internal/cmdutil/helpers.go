@@ -29,6 +29,19 @@ func DoAPI(ctx context.Context, endpoint, method, body string, debug bool) (stri
 	return c.DoAPI(ctx, endpoint, method, body, debug)
 }
 
+// DoMultipart loads the profile, creates a client, and uploads a multipart file.
+func DoMultipart(ctx context.Context, endpoint, fileField, filePath, fileName string, fields map[string]string, debug bool) (string, error) {
+	profile, err := config.LoadProfile()
+	if err != nil {
+		return "", fmt.Errorf(i18n.T("failed to load config: %w", "加载配置失败: %w"), err)
+	}
+	if profile.APIKey == "" {
+		return "", apierr.New(401, `{"code":401,"msg":"API Key not found"}`)
+	}
+	c := client.New(profile.BaseURL, profile.APIKey)
+	return c.DoMultipart(ctx, endpoint, fileField, filePath, fileName, fields, debug)
+}
+
 // ResolveBaseURL resolves the effective base URL from arg, env, or config.
 func ResolveBaseURL(baseURLArg string) string {
 	if baseURLArg != "" {

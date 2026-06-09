@@ -38,6 +38,8 @@ func init() {
 		i18n.T("Topic type", "Topic 类型"))
 	unsCreateCmd.Flags().String("fields", "",
 		i18n.T("Schema fields JSON array (e.g. '[{\"name\":\"temp\",\"type\":\"float\"}]')", "Schema 字段 JSON 数组"))
+	unsCreateCmd.Flags().Bool("persistence", false,
+		i18n.T("Persist topic values to history storage", "持久化保存点位历史数据"))
 }
 
 func runUnsCreate(cmd *cobra.Command, args []string) error {
@@ -52,6 +54,7 @@ func runUnsCreate(cmd *cobra.Command, args []string) error {
 	file, _ := cmd.Flags().GetString("file")
 	topicType, _ := cmd.Flags().GetString("topic-type")
 	fields, _ := cmd.Flags().GetString("fields")
+	persistence, _ := cmd.Flags().GetBool("persistence")
 
 	var namespace []any
 
@@ -92,6 +95,9 @@ func runUnsCreate(cmd *cobra.Command, args []string) error {
 				return fmt.Errorf(i18n.T("invalid fields JSON: %w", "fields JSON 无效: %w"), err)
 			}
 			node["fields"] = fieldList
+		}
+		if persistence {
+			node["persistence"] = true
 		}
 		namespace = []any{node}
 	}

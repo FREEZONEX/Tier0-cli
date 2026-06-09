@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -97,6 +99,95 @@ func (c *Client) DoAPI(ctx context.Context, endpoint, method, body string, debug
 		return "", apierr.New(resp.StatusCode, string(respBody))
 	}
 
+	return string(respBody), nil
+}
+
+// DoMultipart uploads one file plus optional form fields to an API endpoint.
+func (c *Client) DoMultipart(ctx context.Context, endpoint, fileField, filePath, fileName string, fields map[string]string, debug bool) (string, error) {
+	if fileField == "" {
+		fileField = "file"
+	}
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("打开文件失败: %w", err)
+	}
+	defer file.Close()
+
+	if strings.TrimSpace(fileName) == "" {
+		fileName = filepath.Base(filePath)
+	}
+
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	for key, value := range fields {
+		if value == "" {
+			continue
+		}
+		if err := writer.WriteField(key, value); err != nil {
+			return "", fmt.Errorf("写入表单字段失败: %w", err)
+		}
+	}
+	part, err := writer.CreateFormFile(fileField, fileName)
+	if err != nil {
+		return "", fmt.Errorf("创建文件表单失败: %w", err)
+	}
+	if _, err := io.Copy(part, file); err != nil {
+		return "", fmt.Errorf("读取文件失败: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return "", fmt.Errorf("关闭 multipart writer 失败: %w", err)
+	}
+
+	url := c.baseURL + endpoint
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, &buf)
+	if err != nil {
+		return "", fmt.Errorf("构建请求失败: %w", err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	if c.apiKey != "" {
+		req.Header.Set("x-api-key", c.apiKey)
+	}
+
+	if debug {
+		fmt.Fprintf(os.Stderr, "[debug] ---------- HTTP Request ----------\n")
+		fmt.Fprintf(os.Stderr, "[debug] %s %s\n", req.Method, req.URL.String())
+		for key, values := range req.Header {
+			for _, v := range values {
+				if strings.EqualFold(key, "x-api-key") {
+					v = v[:min(len(v), 8)] + "..."
+				}
+				fmt.Fprintf(os.Stderr, "[debug] %s: %s\n", key, v)
+			}
+		}
+		fmt.Fprintf(os.Stderr, "[debug] Multipart file: field=%s path=%s name=%s\n", fileField, filePath, fileName)
+		fmt.Fprintf(os.Stderr, "[debug] ----------------------------------\n")
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("发送请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("读取响应失败: %w", err)
+	}
+
+	if debug {
+		fmt.Fprintf(os.Stderr, "[debug] ---------- HTTP Response ---------\n")
+		fmt.Fprintf(os.Stderr, "[debug] Status: %d %s\n", resp.StatusCode, resp.Status)
+		if len(respBody) > 4096 {
+			fmt.Fprintf(os.Stderr, "[debug] Body: %s... (%d bytes truncated)\n", string(respBody[:4096]), len(respBody))
+		} else {
+			fmt.Fprintf(os.Stderr, "[debug] Body: %s\n", string(respBody))
+		}
+		fmt.Fprintf(os.Stderr, "[debug] ----------------------------------\n")
+	}
+
+	if resp.StatusCode >= 400 {
+		return "", apierr.New(resp.StatusCode, string(respBody))
+	}
 	return string(respBody), nil
 }
 

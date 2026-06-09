@@ -24,4 +24,6 @@ func init() {
 	unsCmd.AddCommand(unsSearchCmd)
 	unsCmd.AddCommand(unsHistoryCmd)
 	unsCmd.AddCommand(unsRestoreCmd)
+	unsCmd.AddCommand(unsAttachmentsCmd)
+	unsCmd.AddCommand(unsBindFlowCmd)
 }
