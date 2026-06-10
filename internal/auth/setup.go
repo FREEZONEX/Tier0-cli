@@ -90,7 +90,7 @@ func PollSetupCheck(ctx context.Context, baseURL, setupCode string, onPoll func(
 				APIKey        string `json:"apiKey"`
 				WorkspaceID   string `json:"workspaceID"`
 				WorkspaceName string `json:"workspaceName"`
-				ExpiresAt     string `json:"expiresAt"`
+				ExpiresAt     any    `json:"expiresAt"`
 			} `json:"data"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -103,7 +103,7 @@ func PollSetupCheck(ctx context.Context, baseURL, setupCode string, onPoll func(
 		}
 		resp.Body.Close()
 
-		if result.Code != 200 {
+		if result.Code != 0 && result.Code != 200 {
 			err := fmt.Errorf("setup-check failed: %s", result.Msg)
 			if onPoll != nil {
 				onPoll(i, maxPollCount, false, err)
