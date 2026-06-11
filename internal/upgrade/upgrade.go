@@ -4,10 +4,13 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -148,6 +151,8 @@ func Perform(opts Options) (*Result, error) {
 	}
 
 	// ── Path 2: direct GitHub download ───────────────────────────────────
+	// 安全提示：npm 路径的 JS wrapper 经 npm registry 校验，推荐优先使用。
+	// 直接下载路径会验证 SHA256 checksum，但建议安装 Node.js 以使用 npm 路径。
 	result.Method = "github"
 	binaryPath, err := os.Executable()
 	if err != nil {
@@ -178,6 +183,12 @@ func Perform(opts Options) (*Result, error) {
 		return result, err
 	}
 
+	// 下载并验证 SHA256 checksum，防止传输被篡改或文件损坏
+	if err := verifyReleaseChecksum(release.TagName, asset.Name, archivePath); err != nil {
+		result.ErrorMessage = fmt.Sprintf("SHA256 校验失败: %v", err)
+		return result, err
+	}
+
 	extractDir := filepath.Join(tmpDir, "extracted")
 	if err := os.MkdirAll(extractDir, 0o755); err != nil {
 		result.ErrorMessage = fmt.Sprintf("创建解压目录失败: %v", err)
@@ -201,6 +212,79 @@ func Perform(opts Options) (*Result, error) {
 	}
 
 	return result, nil
+}
+
+// verifyReleaseChecksum 从 GitHub Release 下载 sha256sums.txt，
+// 找到与 assetName 对应的期望值，并与本地文件的实际 SHA256 比对。
+// 校验失败直接返回错误，阻止安装继续进行。
+func verifyReleaseChecksum(version, assetName, localPath string) error {
+	sumsURL := fmt.Sprintf(
+		"https://github.com/%s/%s/releases/download/%s/sha256sums.txt",
+		RepoOwner, RepoName, version,
+	)
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get(sumsURL)
+	if err != nil {
+		return fmt.Errorf("下载 sha256sums.txt 失败: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("sha256sums.txt 返回 HTTP %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return fmt.Errorf("读取 sha256sums.txt 失败: %w", err)
+	}
+
+	expected, err := parseChecksum(string(body), assetName)
+	if err != nil {
+		return err
+	}
+
+	actual, err := sha256File(localPath)
+	if err != nil {
+		return fmt.Errorf("计算本地文件 SHA256 失败: %w", err)
+	}
+
+	if !strings.EqualFold(actual, expected) {
+		return fmt.Errorf("SHA256 不匹配（可能下载损坏或被篡改）:\n  期望: %s\n  实际: %s", expected, actual)
+	}
+	return nil
+}
+
+// parseChecksum 从 sha256sum(1) 格式的文本中提取指定文件名对应的 SHA256。
+// 格式为：<hash>  <filename>（两个空格分隔）
+func parseChecksum(sumsText, filename string) (string, error) {
+	for _, line := range strings.Split(sumsText, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// sha256sum 格式：hash  filename（普通文件）或 hash *filename（二进制模式）
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+		name := strings.TrimPrefix(parts[1], "*")
+		if name == filename || filepath.Base(name) == filename {
+			return strings.ToLower(parts[0]), nil
+		}
+	}
+	return "", fmt.Errorf("sha256sums.txt 中未找到文件 %q 的校验和", filename)
+}
+
+// sha256File 计算文件的 SHA256 十六进制字符串。
+func sha256File(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // BackupDir 返回备份目录
@@ -426,5 +510,32 @@ func replaceBinary(newPath, oldPath string) error {
 		return err
 	}
 
+	// macOS: 从网络下载的二进制经 rename 替换后，AMFI/Gatekeeper 可能
+	// 因签名状态不干净而 SIGKILL 新进程（exit:137）。
+	// 用 ad-hoc 签名修复，并移除 quarantine 扩展属性。
+	if runtime.GOOS == "darwin" {
+		fixMacOSSigning(oldPath)
+	}
+
 	return nil
+}
+
+// fixMacOSSigning 对 macOS 上刚替换的二进制施加 ad-hoc 签名并移除
+// quarantine 标记，防止 AMFI/Gatekeeper 在下次执行时 SIGKILL 进程。
+// 两步操作均为 best-effort：codesign 或 xattr 不存在时静默跳过，
+// 不应因此阻断升级流程。
+func fixMacOSSigning(binaryPath string) {
+	// Step 1: 移除 quarantine 扩展属性（从 URL 下载的文件会被打标）
+	// xattr -d com.apple.quarantine <path> — 不存在属性时会返回非零但无害
+	execQuiet("xattr", "-d", "com.apple.quarantine", binaryPath)
+
+	// Step 2: ad-hoc 签名（-s - 表示 ad-hoc identity，-f 强制覆盖已有签名）
+	// 这是没有 Apple 开发者证书时的标准做法，与 Homebrew 的 brew reinstall 逻辑一致。
+	execQuiet("codesign", "-f", "-s", "-", binaryPath)
+}
+
+// execQuiet 运行外部命令，忽略所有输出和错误。
+func execQuiet(name string, args ...string) {
+	cmd := exec.Command(name, args...)
+	_ = cmd.Run()
 }

@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const crypto = require('crypto');
 const { execSync, spawn } = require('child_process');
 
 const REPO = 'FREEZONEX/Tier0-cli';
@@ -92,6 +93,78 @@ function downloadFile(url, dest) {
   });
 }
 
+/** 下载文本内容（用于 sha256sums.txt）*/
+function fetchText(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, { timeout: 30000 }, (res) => {
+      if (res.statusCode === 301 || res.statusCode === 302) {
+        return fetchText(res.headers.location).then(resolve).catch(reject);
+      }
+      if (res.statusCode !== 200) {
+        return reject(new Error(`HTTP ${res.statusCode} fetching ${url}`));
+      }
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => resolve(data));
+    }).on('error', reject);
+  });
+}
+
+/**
+ * 从 sha256sum(1) 格式文本中找到 filename 对应的期望哈希。
+ * 格式：<hash>  <filename>  （两个空格；或 <hash> *<filename> 二进制模式）
+ */
+function parseChecksum(sumsText, filename) {
+  for (const rawLine of sumsText.split('\n')) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const parts = line.split(/\s+/);
+    if (parts.length < 2) continue;
+    const name = parts[1].replace(/^\*/, '');  // strip leading * (binary mode)
+    if (name === filename || path.basename(name) === filename) {
+      return parts[0].toLowerCase();
+    }
+  }
+  return null;
+}
+
+/** 计算本地文件的 SHA256 十六进制摘要 */
+function sha256File(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(filePath);
+    stream.on('error', reject);
+    stream.on('data', chunk => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+  });
+}
+
+/**
+ * 下载 sha256sums.txt 并校验本地文件。
+ * 校验失败时 reject，由调用方决定是否中断安装。
+ */
+async function verifyChecksum(version, pkgName, localPath) {
+  const sumsUrl = `https://github.com/${REPO}/releases/download/${version}/sha256sums.txt`;
+  let sumsText;
+  try {
+    sumsText = await fetchText(sumsUrl);
+  } catch (err) {
+    throw new Error(`下载 sha256sums.txt 失败: ${err.message}`);
+  }
+
+  const expected = parseChecksum(sumsText, pkgName);
+  if (!expected) {
+    throw new Error(`sha256sums.txt 中未找到 "${pkgName}" 的校验和`);
+  }
+
+  const actual = await sha256File(localPath);
+  if (actual !== expected) {
+    throw new Error(
+      `SHA256 校验失败（文件可能损坏或被篡改）:\n  期望: ${expected}\n  实际: ${actual}`
+    );
+  }
+}
+
 function extractTarGz(tarPath, destDir) {
   if (process.platform === 'win32') {
     // Windows: use PowerShell Expand-Archive (zip)
@@ -130,6 +203,11 @@ async function install({ force = false } = {}) {
   try {
     console.log(`Downloading ${pkgName}...`);
     await downloadFile(downloadUrl, tmpFile);
+
+    // SHA256 校验：防止下载损坏或 MITM 篡改
+    console.log('Verifying checksum...');
+    await verifyChecksum(version, pkgName, tmpFile);
+    console.log('✓ Checksum verified.');
 
     console.log('Extracting...');
     const extractDir = path.join(tmpDir, `tier0-extract-${Date.now()}`);

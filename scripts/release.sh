@@ -107,13 +107,15 @@ build_one() {
   commit_sha="$(git -C "${ROOT}" rev-parse --short HEAD 2>/dev/null || echo "unknown")"
   build_date="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 
-  if ! (cd "${ROOT}" && GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 go build \
+  echo "[building] ${platform} ..." >&2
+
+  local build_log
+  build_log=$(cd "${ROOT}" && GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 go build \
         -ldflags "-s -w -X github.com/FREEZONEX/Tier0-cli/internal/version.BuildVersion=${VERSION} -X github.com/FREEZONEX/Tier0-cli/internal/version.BuildCommit=${commit_sha} -X github.com/FREEZONEX/Tier0-cli/internal/version.BuildDate=${build_date}" \
-        -o "${platform_dir}/tier0${exe_suffix}" . 2>/dev/null); then
-    build_err=1
-  fi
+        -o "${platform_dir}/tier0${exe_suffix}" . 2>&1) || build_err=1
 
   if [[ $build_err -ne 0 ]]; then
+    echo "[FAILED]   ${platform}${build_log:+: ${build_log}}" >&2
     echo "FAILED:${platform}"
     rm -rf "${platform_dir}"
     return 1
@@ -138,14 +140,11 @@ build_one() {
     done
 
     # 写入 skills 版本元数据
-    cat > "${platform_dir}/skill/_meta.json" << EOF
-{
-  "version": "${VERSION}",
-  "updatedAt": "${build_date}"
-}
-EOF
+    printf '{\n  "version": "%s",\n  "updatedAt": "%s"\n}\n' \
+      "${VERSION}" "${build_date}" > "${platform_dir}/skill/_meta.json"
   fi
 
+  echo "[OK]       ${platform} (${name})" >&2
   echo "OK:${platform}:${name}"
 }
 export -f build_one platform_name
