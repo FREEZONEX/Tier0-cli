@@ -30,8 +30,8 @@ func joinUNSPath(parent, child string) string {
 // ── file parsing ──────────────────────────────────────────────────────────────
 
 // parseNamespaceFile accepts {"namespace":[...]} or a bare [...] array.
-// The backend accepts path/topic and folder/file interchangeably, so no
-// translation is needed — the JSON is forwarded as-is.
+// The backend accepts canonical PATH/TOPIC and legacy path/topic/folder/file
+// interchangeably, so user-provided JSON is forwarded as-is.
 func parseNamespaceFile(raw []byte) ([]any, error) {
 	var wrapped struct {
 		Namespace []any `json:"namespace"`
@@ -58,8 +58,8 @@ var typeFolders = map[string]string{
 
 // resolveNodeType maps the --type flag to the API node type.
 //
-//   --type path   → "path"  node  (a directory in the UNS tree)
-//   --type topic  → "topic" node  (a data point / topic)
+//	--type path   → "PATH"  node  (a directory in the UNS tree)
+//	--type topic  → "TOPIC" node  (a data point / topic)
 //
 // Legacy aliases are accepted with a deprecation warning so existing scripts
 // keep working during migration.
@@ -75,23 +75,23 @@ func resolveNodeType(nodeTypeFlag string, errOut io.Writer) (apiType string, err
 
 	switch strings.ToLower(strings.TrimSpace(nodeTypeFlag)) {
 	case "topic":
-		return "topic", nil
+		return "TOPIC", nil
 	case "path":
-		return "path", nil
+		return "PATH", nil
 
 	// ── legacy aliases (kept for backward compatibility) ──────────────────
 	case "file", "object":
 		warn(nodeTypeFlag, "topic")
-		return "topic", nil
+		return "TOPIC", nil
 	case "metric", "action", "state":
 		warn(nodeTypeFlag, "topic")
-		return "topic", nil
+		return "TOPIC", nil
 	case "thing":
 		warn("thing", "topic")
-		return "topic", nil
+		return "TOPIC", nil
 	case "folder", "directory", "dir":
 		warn(nodeTypeFlag, "path")
-		return "path", nil
+		return "PATH", nil
 
 	case "":
 		return "", fmt.Errorf(i18n.T(
@@ -116,9 +116,9 @@ func resolveNodeType(nodeTypeFlag string, errOut io.Writer) (apiType string, err
 //
 // Valid:
 //
-//	.../Metric/ProductionCount   → topicType "metric"
-//	.../Action/StartCommand      → topicType "action"
-//	.../State/MachineStatus      → topicType "state"
+//	.../Metric/ProductionCount   → topicType "METRIC"
+//	.../Action/StartCommand      → topicType "ACTION"
+//	.../State/MachineStatus      → topicType "STATE"
 //
 // Invalid:
 //
@@ -150,7 +150,7 @@ func deriveTopicType(fullPath string) (topicType string, err error) {
 		), fullPath, segments[len(segments)-2], suggested)
 	}
 
-	return parent, nil // e.g. "metric", "action", "state"
+	return strings.ToUpper(parent), nil // e.g. "METRIC", "ACTION", "STATE"
 }
 
 // ── namespace tree construction ───────────────────────────────────────────────
@@ -186,12 +186,12 @@ func buildLeafNode(name, apiType, topicType, displayName, description, alias, fi
 // wrapInFolderTree wraps the leaf in a nested path chain for fullPath.
 // Every segment except the last becomes a path node; the last segment is the leaf.
 //
-// Example: fullPath = "Plant/Line1/Metric/Temp", leaf = {name:"Temp", type:"topic"} →
+// Example: fullPath = "Plant/Line1/Metric/Temp", leaf = {name:"Temp", type:"TOPIC"} →
 //
-//	[{name:"Plant", type:"path", children:[
-//	  {name:"Line1", type:"path", children:[
-//	    {name:"Metric", type:"path", children:[
-//	      {name:"Temp", type:"topic", …}
+//	[{name:"Plant", type:"PATH", children:[
+//	  {name:"Line1", type:"PATH", children:[
+//	    {name:"Metric", type:"PATH", children:[
+//	      {name:"Temp", type:"TOPIC", …}
 //	    ]}
 //	  ]}
 //	]}]
@@ -217,7 +217,7 @@ func wrapInFolderTree(fullPath string, leaf map[string]any) ([]any, error) {
 	for i := len(segments) - 2; i >= 0; i-- {
 		node = map[string]any{
 			"name":     segments[i],
-			"type":     "path",
+			"type":     "PATH",
 			"children": []any{node},
 		}
 	}
@@ -234,10 +234,13 @@ func wrapInFolderTree(fullPath string, leaf map[string]any) ([]any, error) {
 // the segment before the leaf must be Metric, Action, or State.
 func buildNamespaceFromFlags(
 	parent, topic,
-	nodeTypeFlag, _ /* topic-type flag deprecated */,
+	nodeTypeFlag, topicTypeFlag,
 	displayName, description, alias, fieldsJSON string,
 	errOut io.Writer,
 ) (namespace []any, fullPath string, err error) {
+	// The topic-type flag is deprecated; topicType is derived from the path.
+	_ = topicTypeFlag
+
 	fullPath = normalizeUNSPath(joinUNSPath(parent, topic))
 	if fullPath == "" {
 		return nil, "", fmt.Errorf(i18n.T("--topic is required", "--topic 为必填"))
@@ -250,7 +253,7 @@ func buildNamespaceFromFlags(
 
 	// For topic nodes: derive topicType from path (enforces structural rule).
 	topicType := ""
-	if apiType == "topic" {
+	if apiType == "TOPIC" {
 		topicType, err = deriveTopicType(fullPath)
 		if err != nil {
 			return nil, "", err

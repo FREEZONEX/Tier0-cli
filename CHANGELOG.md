@@ -69,7 +69,7 @@ All notable changes to Tier0 CLI are documented here.
 - **topicType 自动推导**：无需手动指定 `--topic-type`，CLI 自动从路径倒数第二段（`Metric` / `Action` / `State`）推导，更简洁
 
   ```bash
-  # 路径含 Metric 自动推导 topicType=metric
+  # 路径含 Metric 自动推导 topicType=METRIC
   tier0 uns create --topic Plant/Line1/Metric/Temperature --type topic \
     --fields '[{"name":"value","type":"float","unit":"°C"}]'
   ```

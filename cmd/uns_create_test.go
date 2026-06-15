@@ -17,18 +17,18 @@ func TestResolveNodeType(t *testing.T) {
 		wantErr bool
 	}{
 		// canonical values
-		{"topic", "topic", false},
-		{"path", "path", false},
+		{"topic", "TOPIC", false},
+		{"path", "PATH", false},
 		// legacy aliases — still accepted
-		{"file", "topic", false},
-		{"object", "topic", false},
-		{"METRIC", "topic", false},
-		{"ACTION", "topic", false},
-		{"STATE", "topic", false},
-		{"thing", "topic", false},
-		{"FOLDER", "path", false},
-		{"folder", "path", false},
-		{"dir", "path", false},
+		{"file", "TOPIC", false},
+		{"object", "TOPIC", false},
+		{"METRIC", "TOPIC", false},
+		{"ACTION", "TOPIC", false},
+		{"STATE", "TOPIC", false},
+		{"thing", "TOPIC", false},
+		{"FOLDER", "PATH", false},
+		{"folder", "PATH", false},
+		{"dir", "PATH", false},
 		// errors
 		{"", "", true},
 		{"invalid", "", true},
@@ -49,13 +49,13 @@ func TestResolveNodeType(t *testing.T) {
 
 func TestDeriveTopicType_Valid(t *testing.T) {
 	cases := []struct{ path, want string }{
-		{"Plant/Line1/Metric/Temperature", "metric"},
-		{"Factory1/Assembly/Line1/Station1/Metric/ProductionCount", "metric"},
-		{"X/Action/Start", "action"},
-		{"Y/State/MachineStatus", "state"},
+		{"Plant/Line1/Metric/Temperature", "METRIC"},
+		{"Factory1/Assembly/Line1/Station1/Metric/ProductionCount", "METRIC"},
+		{"X/Action/Start", "ACTION"},
+		{"Y/State/MachineStatus", "STATE"},
 		// case-insensitive match
-		{"Plant/metric/Temperature", "metric"},
-		{"Plant/ACTION/StartCmd", "action"},
+		{"Plant/metric/Temperature", "METRIC"},
+		{"Plant/ACTION/StartCmd", "ACTION"},
 	}
 	for _, c := range cases {
 		got, err := deriveTopicType(c.path)
@@ -95,7 +95,7 @@ func TestDeriveTopicType_Invalid(t *testing.T) {
 // ── wrapInFolderTree ──────────────────────────────────────────────────────────
 
 func TestWrapInFolderTree_SingleSegment(t *testing.T) {
-	leaf := map[string]any{"name": "Plant", "type": "path"}
+	leaf := map[string]any{"name": "Plant", "type": "PATH"}
 	ns, err := wrapInFolderTree("Plant", leaf)
 	if err != nil {
 		t.Fatal(err)
@@ -110,13 +110,13 @@ func TestWrapInFolderTree_SingleSegment(t *testing.T) {
 }
 
 func TestWrapInFolderTree_MultiLevel(t *testing.T) {
-	leaf := map[string]any{"name": "Temperature", "type": "topic", "topicType": "metric"}
+	leaf := map[string]any{"name": "Temperature", "type": "TOPIC", "topicType": "METRIC"}
 	ns, err := wrapInFolderTree("Plant/Line1/Metric/Temperature", leaf)
 	if err != nil {
 		t.Fatal(err)
 	}
 	root := ns[0].(map[string]any)
-	if root["name"] != "Plant" || root["type"] != "path" {
+	if root["name"] != "Plant" || root["type"] != "PATH" {
 		t.Fatalf("root=%v", root)
 	}
 	// Walk Plant → Line1 → Metric → Temperature
@@ -129,7 +129,7 @@ func TestWrapInFolderTree_MultiLevel(t *testing.T) {
 		node = ch
 	}
 	l := node["children"].([]any)[0].(map[string]any)
-	if l["name"] != "Temperature" || l["type"] != "topic" {
+	if l["name"] != "Temperature" || l["type"] != "TOPIC" {
 		t.Fatalf("leaf=%v", l)
 	}
 }
@@ -171,9 +171,9 @@ func TestBuildNamespaceFromFlags_WithParent(t *testing.T) {
 
 func TestBuildNamespaceFromFlags_ActionAndState(t *testing.T) {
 	cases := []struct{ topic, nt, wantTT string }{
-		{"Machine/Action/Start", "topic", "action"},
-		{"Machine/State/Status", "topic", "state"},
-		{"Machine/Metric/Speed", "topic", "metric"},
+		{"Machine/Action/Start", "topic", "ACTION"},
+		{"Machine/State/Status", "topic", "STATE"},
+		{"Machine/Metric/Speed", "topic", "METRIC"},
 	}
 	for _, c := range cases {
 		ns, _, err := buildNamespaceFromFlags("", c.topic, c.nt, "", "", "", "", "", nil)
