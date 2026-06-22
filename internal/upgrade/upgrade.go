@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -17,6 +18,15 @@ import (
 	"time"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/version"
+)
+
+var (
+	fetchLatestRelease = FetchLatestRelease
+	fetchRelease       = FetchRelease
+	npmAvailable       = NpmAvailable
+	runNpmInstall      = RunNpmInstall
+	execLookPath       = exec.LookPath
+	execCommandContext = exec.CommandContext
 )
 
 // Options controls upgrade behavior.
@@ -98,9 +108,9 @@ func Perform(opts Options) (*Result, error) {
 	var release *Release
 	var err error
 	if opts.TargetVersion != "" {
-		release, err = FetchRelease(opts.TargetVersion)
+		release, err = fetchRelease(opts.TargetVersion)
 	} else {
-		release, err = FetchLatestRelease()
+		release, err = fetchLatestRelease()
 	}
 	if err != nil {
 		return &Result{CurrentVersion: version.BuildVersion, ErrorMessage: err.Error()}, err
@@ -139,11 +149,14 @@ func Perform(opts Options) (*Result, error) {
 	}
 
 	// ── Path 1: npm available → delegate to npm install ──────────────────
-	if NpmAvailable() {
-		npmResult := RunNpmInstall(release.TagName)
+	if npmAvailable() {
+		npmResult := runNpmInstall(release.TagName)
 		if npmResult.Err != nil {
 			// npm failed; fall through to direct download below
 			result.ErrorMessage = fmt.Sprintf("npm install failed; trying direct download: %v", npmResult.Err)
+		} else if err := verifyInstalledVersion(release.TagName); err != nil {
+			result.ErrorMessage = fmt.Sprintf("npm install completed, but installed binary verification failed: %v", err)
+			return result, err
 		} else {
 			result.Method = "npm"
 			return result, nil
@@ -212,6 +225,41 @@ func Perform(opts Options) (*Result, error) {
 	}
 
 	return result, nil
+}
+
+func verifyInstalledVersion(expectedVersion string) error {
+	exe, err := execLookPath("tier0")
+	if err != nil {
+		exe, err = os.Executable()
+		if err != nil {
+			return fmt.Errorf("cannot locate tier0 executable: %w", err)
+		}
+		if resolved, resolveErr := filepath.EvalSymlinks(exe); resolveErr == nil {
+			exe = resolved
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	out, err := execCommandContext(ctx, exe, "version").Output()
+	if ctx.Err() == context.DeadlineExceeded {
+		return fmt.Errorf("tier0 version timed out after 10s")
+	}
+	if err != nil {
+		return fmt.Errorf("tier0 version failed: %w", err)
+	}
+
+	fields := strings.Fields(strings.TrimSpace(string(out)))
+	if len(fields) == 0 {
+		return fmt.Errorf("tier0 version returned empty output")
+	}
+	actual := strings.TrimPrefix(fields[len(fields)-1], "v")
+	expected := strings.TrimPrefix(expectedVersion, "v")
+	if actual != expected {
+		return fmt.Errorf("expected version %s, got %q", expectedVersion, actual)
+	}
+	return nil
 }
 
 // verifyReleaseChecksum downloads sha256sums.txt from the GitHub Release,

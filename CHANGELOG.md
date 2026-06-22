@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed npm-based upgrades on macOS by repairing quarantine/signing state after installing the downloaded binary.
+- Added post-npm-upgrade binary verification so `tier0 upgrade` fails clearly if the installed CLI cannot run.
 - Changed `tier0 flow data --out` to write a deployable Node-RED `flows` array instead of the full API envelope.
 - Made `tier0 flow deploy` accept full API envelopes, `data` objects, or pure `flows` arrays, normalizing all inputs before deployment.
 - CLI output is now English-only.

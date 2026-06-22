@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const crypto = require('crypto');
-const { execSync, spawn } = require('child_process');
+const { execFileSync, execSync, spawn } = require('child_process');
 
 const REPO = 'FREEZONEX/Tier0-cli';
 const BIN_DIR = path.join(require('os').homedir(), '.tier0', 'bin');
@@ -174,6 +174,41 @@ function extractTarGz(tarPath, destDir) {
   }
 }
 
+function runBestEffort(command, args) {
+  try {
+    execFileSync(command, args, { stdio: 'ignore' });
+  } catch (_) {
+    // Best effort only. A missing tool or absent attribute should not block install.
+  }
+}
+
+function fixMacOSSigning(binaryPath) {
+  if (process.platform !== 'darwin') {
+    return;
+  }
+  runBestEffort('xattr', ['-d', 'com.apple.quarantine', binaryPath]);
+  runBestEffort('codesign', ['-f', '-s', '-', binaryPath]);
+}
+
+function verifyInstalledBinary(binaryPath, expectedVersion) {
+  let output;
+  try {
+    output = execFileSync(binaryPath, ['version'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 10000,
+    });
+  } catch (err) {
+    throw new Error(`installed binary is not executable: ${err.message}`);
+  }
+
+  const actual = String(output).trim().split(/\s+/).pop().replace(/^v/, '');
+  const expected = expectedVersion.replace(/^v/, '');
+  if (actual !== expected) {
+    throw new Error(`installed binary version mismatch: expected ${expectedVersion}, got ${actual || '(empty)'}`);
+  }
+}
+
 async function install({ force = false } = {}) {
   const plat = platformName();
   const version = VERSION;  // always use npm package version — in sync with Go release
@@ -242,6 +277,8 @@ async function install({ force = false } = {}) {
     if (process.platform !== 'win32') {
       fs.chmodSync(binPath, 0o755);
     }
+    fixMacOSSigning(binPath);
+    verifyInstalledBinary(binPath, version);
     fs.writeFileSync(VERSION_FILE, version);
 
     // Install skills documentation.
