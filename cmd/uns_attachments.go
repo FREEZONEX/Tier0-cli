@@ -132,9 +132,9 @@ func runUnsAttachmentList(cmd *cobra.Command, args []string) error {
 	q.Set("pageNo", strconv.Itoa(pageNo))
 	q.Set("pageSize", strconv.Itoa(pageSize))
 	q.Set("includeFileUrl", strconv.FormatBool(includeFileURL))
-	endpoint := fmt.Sprintf("/openapi/v1/uns/%d/attachments?%s", unsID, q.Encode())
+	endpoint := fmt.Sprintf("/openapi/v1/uns/%d/attachments/list?%s", unsID, q.Encode())
 
-	resp, err := cmdutil.DoAPI(cmd.Context(), endpoint, "GET", "", debug)
+	resp, err := cmdutil.DoAPI(cmd.Context(), endpoint, "POST", "", debug)
 	if err != nil {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
 	}
