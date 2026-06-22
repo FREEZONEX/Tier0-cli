@@ -167,10 +167,13 @@ func CheckResponse(resp string) error {
 	// Step 2 — per-item results check (partial-success batch pattern).
 	var envelope struct {
 		Data struct {
+			Success *bool `json:"success"`
 			Results []struct {
-				Topic string `json:"topic"`
-				Name  string `json:"name"`
-				Error *struct {
+				Topic   string `json:"topic"`
+				Name    string `json:"name"`
+				Path    string `json:"path"`
+				Success *bool  `json:"success"`
+				Error   *struct {
 					Code    int    `json:"code"`
 					Message string `json:"message"`
 				} `json:"error"`
@@ -182,13 +185,30 @@ func CheckResponse(resp string) error {
 	}
 	var errsSlice []string
 	for _, r := range envelope.Data.Results {
-		if r.Error != nil && r.Error.Code != 0 && r.Error.Code != 200 {
-			label := r.Topic
-			if label == "" {
-				label = r.Name
-			}
-			errsSlice = append(errsSlice, fmt.Sprintf("%s: %s (code %d)", label, r.Error.Message, r.Error.Code))
+		label := r.Topic
+		if label == "" {
+			label = r.Path
 		}
+		if label == "" {
+			label = r.Name
+		}
+		if label == "" {
+			label = "(item)"
+		}
+		if r.Error != nil && r.Error.Code != 0 && r.Error.Code != 200 {
+			errsSlice = append(errsSlice, fmt.Sprintf("%s: %s (code %d)", label, r.Error.Message, r.Error.Code))
+			continue
+		}
+		if r.Success != nil && !*r.Success {
+			msg := "business success=false"
+			if r.Error != nil && r.Error.Message != "" {
+				msg = r.Error.Message
+			}
+			errsSlice = append(errsSlice, fmt.Sprintf("%s: %s", label, msg))
+		}
+	}
+	if len(errsSlice) == 0 && envelope.Data.Success != nil && !*envelope.Data.Success {
+		errsSlice = append(errsSlice, "response data.success=false")
 	}
 	if len(errsSlice) == 0 {
 		return nil

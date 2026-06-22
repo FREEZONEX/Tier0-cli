@@ -70,6 +70,7 @@ func init() {
 	rootCmd.AddCommand(apiCmd)
 	rootCmd.AddCommand(loginCmd)
 	rootCmd.AddCommand(configCmd)
+	rootCmd.AddCommand(doctorCmd)
 	rootCmd.AddCommand(upgradeCmd)
 	rootCmd.AddCommand(uninstallCmd)
 	rootCmd.AddCommand(skillsCmd)
@@ -85,4 +86,5 @@ func init() {
 			fmt.Fprintf(cmd.OutOrStdout(), "tier0 version %s\n", version.BuildVersion)
 		},
 	})
+
 }

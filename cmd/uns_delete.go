@@ -23,11 +23,13 @@ var unsDeleteCmd = &cobra.Command{
 func init() {
 	unsDeleteCmd.Flags().StringArrayP("path", "p", nil,
 		i18n.T("Node path(s) to delete (repeatable, required)", "要删除的节点路径（可重复指定，必填）"))
+	unsDeleteCmd.Flags().StringArray("topic", nil,
+		i18n.T("Deprecated alias for --path", "已废弃：请改用 --path"))
+	_ = unsDeleteCmd.Flags().MarkHidden("topic")
 	unsDeleteCmd.Flags().Bool("hard", false,
 		i18n.T("Hard delete (irreversible)", "硬删除（不可逆）"))
 	unsDeleteCmd.Flags().BoolP("yes", "y", false,
 		i18n.T("Confirm high-risk operation (required)", "确认高风险操作（必填）"))
-	unsDeleteCmd.MarkFlagRequired("path")
 }
 
 func runUnsDelete(cmd *cobra.Command, args []string) error {
@@ -36,7 +38,23 @@ func runUnsDelete(cmd *cobra.Command, args []string) error {
 	debug, _ := cmd.Flags().GetBool("debug")
 	confirmed, _ := cmd.Flags().GetBool("yes")
 	topics, _ := cmd.Flags().GetStringArray("path")
+	legacyTopics, _ := cmd.Flags().GetStringArray("topic")
 	hard, _ := cmd.Flags().GetBool("hard")
+	if len(legacyTopics) > 0 {
+		if !jsonMode {
+			fmt.Fprintln(cmd.ErrOrStderr(), i18n.T(
+				"warning: --topic is deprecated for uns delete; use --path",
+				"警告: uns delete 的 --topic 已废弃，请改用 --path",
+			))
+		}
+		topics = append(topics, legacyTopics...)
+	}
+	if len(topics) == 0 {
+		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("%s", i18n.T(
+			"specify at least one path via --path <path>",
+			"请通过 --path <路径> 指定至少一个节点",
+		)), jsonMode)
+	}
 
 	action := i18n.T("soft delete", "软删除")
 	if hard {
