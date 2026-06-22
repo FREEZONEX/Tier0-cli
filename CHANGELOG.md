@@ -3,7 +3,10 @@
 ## Unreleased
 
 - CLI output is now English-only.
-- Removed runtime use of the legacy `i18n.T` translation helper from command definitions.
+- Removed runtime use of the legacy `i18n.T` translation helper from command definitions and deleted the unused i18n package.
+- Updated CLI README, npm wrapper docs, install scripts, release scripts, and user-facing command text to English.
+- Deprecated language switching; `tier0 config --lang en` remains accepted for compatibility, while other language values are rejected.
+- Updated bundled skill guidance examples so `go test ./...` validates against the current CLI command tree.
 - Added `tier0 doctor` for local connectivity and authentication diagnostics.
 - Improved UNS command ergonomics and batch response validation.
 - Added positional topic support for `uns read`.
