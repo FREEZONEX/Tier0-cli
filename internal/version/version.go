@@ -1,16 +1,16 @@
 package version
 
-// BuildVersion 通过 go build -ldflags 注入
+// BuildVersion is injected through go build -ldflags.
 // go build -ldflags "-X github.com/FREEZONEX/Tier0-cli/internal/version.BuildVersion=v0.1.0"
 var BuildVersion = "dev"
 
-// BuildCommit 通过 go build -ldflags 注入
+// BuildCommit is injected through go build -ldflags.
 var BuildCommit = "unknown"
 
-// BuildDate 通过 go build -ldflags 注入
+// BuildDate is injected through go build -ldflags.
 var BuildDate = "unknown"
 
-// IsDev 判断是否为开发版本
+// IsDev reports whether this is a development build.
 func IsDev() bool {
 	return BuildVersion == "" || BuildVersion == "dev"
 }

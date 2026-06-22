@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Tier0 Skills 打包脚本
-# 用法: bash scripts/package-skill.sh [OUT_DIR] [--version VERSION]
-# 示例: bash scripts/package-skill.sh ./dist/skills --version v0.2.0
+# Tier0 Skills packaging script
+# Usage: bash scripts/package-skill.sh [OUT_DIR] [--version VERSION]
+# Example: bash scripts/package-skill.sh ./dist/skills --version v0.2.0
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SKILL_SRC="${ROOT}/../skill"
 OUT_DIR="${1:-${ROOT}/dist/skills}"
 SKILL_VERSION="${SKILL_VERSION:-0.0.0-dev}"
 
-# 解析参数
+# Parse arguments.
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --version)
@@ -57,7 +57,7 @@ echo "[package-skill] version: ${SKILL_VERSION}"
 rm -rf "${OUT_DIR}"
 mkdir -p "${OUT_DIR}"
 
-# 复制所有 skill 文件（排除 .git 和安装脚本）
+# Copy all skill files, excluding .git and installer scripts.
 for item in "${SKILL_SRC}"/*; do
   name=$(basename "$item")
   if [[ "$name" == ".git" || "$name" == "install-openclaw.sh" ]]; then
@@ -70,7 +70,7 @@ for item in "${SKILL_SRC}"/*; do
   fi
 done
 
-# 写入元数据
+# Write metadata.
 cat > "${OUT_DIR}/_meta.json" << EOF
 {
   "version": "${SKILL_VERSION}",

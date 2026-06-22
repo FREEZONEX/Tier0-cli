@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Tier0 CLI 跨平台 Release 构建脚本
-# 用法: bash scripts/release.sh [VERSION]
-# 示例: bash scripts/release.sh v0.2.0
+# Tier0 CLI cross-platform release build script
+# Usage: bash scripts/release.sh [VERSION]
+# Example: bash scripts/release.sh v0.2.0
 #
-# 环境变量（推荐写入 .env 文件，脚本会自动加载）：
+# Environment variables (recommended in .env; loaded automatically):
 #   GITHUB_TOKEN  - GitHub Personal Access Token
-#   PARALLEL      - 并发构建数（默认 8）
+#   PARALLEL      - parallel build count (default 8)
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# 自动加载 .env 文件（如果存在）
+# Load .env automatically when present.
 if [[ -f "${ROOT}/.env" ]]; then
   # shellcheck source=/dev/null
   source "${ROOT}/.env"
@@ -22,13 +22,13 @@ BUILD_DIR="${ROOT}/dist/release-${VERSION}"
 RELEASE_DIR="${BUILD_DIR}/packages"
 PARALLEL="${PARALLEL:-8}"
 
-# Skill 源码目录（与 cli 同级的 skill 子模块）
+# Skill source directory, normally a sibling checkout.
 SKILL_SRC="${ROOT}/../skill"
 
-# 排除的平台（非原生或不需要）
+# Excluded platforms that are not native or not needed.
 EXCLUDE_PLATFORMS="js/wasm wasip1/wasm android/386 android/amd64 android/arm android/arm64 ios/amd64 ios/arm64"
 
-# 平台 → 友好名称映射
+# Platform to release asset name mapping.
 platform_name() {
   local goos="$1" goarch="$2"
   case "${goos}/${goarch}" in
@@ -46,7 +46,7 @@ platform_name() {
   esac
 }
 
-# 检查是否需要排除
+# Check whether the platform should be excluded.
 is_excluded() {
   local platform="$1"
   for ex in $EXCLUDE_PLATFORMS; do
@@ -64,16 +64,16 @@ echo "  Parallel: ${PARALLEL}"
 echo "========================================"
 echo ""
 
-# 确保版本号以 v 开头
+# Ensure the version starts with v.
 if [[ ! "$VERSION" =~ ^v ]]; then
   VERSION="v${VERSION}"
 fi
 
-# 创建目录
+# Create output directory.
 rm -rf "${BUILD_DIR}"
 mkdir -p "${RELEASE_DIR}"
 
-# 获取所有原生平台（排除 wasm/android/ios/js）
+# Get native platforms, excluding wasm/android/ios/js.
 PLATFORMS=()
 while IFS='/' read -r goos goarch; do
   platform="${goos}/${goarch}"
@@ -85,10 +85,10 @@ while IFS='/' read -r goos goarch; do
 done < <(go tool dist list | sort)
 
 echo ""
-echo "准备构建 ${#PLATFORMS[@]} 个平台，并发数: ${PARALLEL}"
+echo "Preparing ${#PLATFORMS[@]} platform builds, parallelism: ${PARALLEL}"
 echo ""
 
-# 构建单个平台的函数
+# Build one platform.
 build_one() {
   local goos="$1" goarch="$2"
   local platform="${goos}/${goarch}"
@@ -121,14 +121,14 @@ build_one() {
     return 1
   fi
 
-  # 复制 skill 资源到发布包
+  # Copy skill assets into the release package.
   if [[ -d "${SKILL_SRC}" ]]; then
     mkdir -p "${platform_dir}/skill"
-    # 复制 SKILL.md、uns/ 目录、LICENSE 等
+    # Copy SKILL.md, uns/, LICENSE, and related assets.
     for item in "${SKILL_SRC}"/*; do
       local skill_name
       skill_name=$(basename "$item")
-      # 跳过 .git 和脚本
+      # Skip .git and scripts.
       if [[ "$skill_name" == ".git" || "$skill_name" == "install-openclaw.sh" ]]; then
         continue
       fi
@@ -139,7 +139,7 @@ build_one() {
       fi
     done
 
-    # 写入 skills 版本元数据
+    # Write skills version metadata.
     printf '{\n  "version": "%s",\n  "updatedAt": "%s"\n}\n' \
       "${VERSION}" "${build_date}" > "${platform_dir}/skill/_meta.json"
   fi
@@ -150,7 +150,7 @@ build_one() {
 export -f build_one platform_name
 export ROOT BUILD_DIR VERSION SKILL_SRC
 
-# 并行构建
+# Parallel build.
 BUILD_OK=0
 BUILD_FAIL=0
 FAILED_PLATFORMS=()
@@ -184,26 +184,26 @@ done <<< "$results"
 
 echo ""
 echo "========================================"
-echo "  构建结果"
+echo "  Build results"
 echo "========================================"
-echo "  成功: ${BUILD_OK}"
-echo "  失败: ${BUILD_FAIL}"
+echo "  Success: ${BUILD_OK}"
+echo "  Failed: ${BUILD_FAIL}"
 if [[ ${#FAILED_PLATFORMS[@]} -gt 0 ]]; then
-  echo "  失败平台:"
+  echo "  Failed platforms:"
   for fp in "${FAILED_PLATFORMS[@]}"; do
     echo "    - ${fp}"
   done
 fi
 echo ""
 
-# 生成 checksums
-echo "[checksum] 生成 SHA256 校验和..."
+# Generate checksums.
+echo "[checksum] Generating SHA256 checksums..."
 cd "${RELEASE_DIR}"
 sha256sum * > "sha256sums.txt"
 cd - >/dev/null
 
 echo ""
-echo "发布包已生成: ${RELEASE_DIR}"
+echo "Release packages generated: ${RELEASE_DIR}"
 ls -lh "${RELEASE_DIR}"
 echo ""
 
@@ -212,14 +212,14 @@ echo ""
 # ========================================
 release_github() {
   if [[ -z "${GITHUB_TOKEN:-}" ]]; then
-    echo "[github] 未设置 GITHUB_TOKEN，跳过 GitHub Release"
-    echo "         如需发布，请设置环境变量后重新运行:"
+    echo "[github] GITHUB_TOKEN is not set; skipping GitHub Release"
+    echo "         To publish, set the environment variable and rerun:"
     echo "         export GITHUB_TOKEN=ghp_xxxxxxxx"
     return 1
   fi
 
   local repo="FREEZONEX/Tier0-cli"
-  echo "[github] 创建 Release: ${VERSION} ..."
+  echo "[github] Creating Release: ${VERSION} ..."
 
   # Build JSON payload with Node.js to guarantee valid JSON encoding
   # (avoids bash quoting / \n expansion / backtick issues on all platforms)
@@ -249,22 +249,22 @@ release_github() {
       body: body
     }));
   " > "$payload_file") || {
-    echo "[github] 生成 JSON payload 失败（node 不可用？）"
+    echo "[github] Failed to generate JSON payload (is node unavailable?)"
     rm -f "$payload_file"
     return 1
   }
 
-  # Preflight: 检查 api.github.com 连通性（超时 8 秒）
+  # Preflight: check api.github.com connectivity with an 8-second timeout.
   local ping_code
   ping_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 \
     -H "Authorization: token ${GITHUB_TOKEN}" \
     -H "Accept: application/vnd.github.v3+json" \
     "https://api.github.com/rate_limit" 2>/dev/null || echo "000")
   if [[ "$ping_code" == "000" ]]; then
-    echo "[github] 创建 Release 失败（HTTP 000）"
-    echo "[github] 常见原因："
-    echo "         000 — 无法连接 api.github.com（网络不通 / 防火墙 / 代理未配置）"
-    echo "               如使用代理，请设置: export https_proxy=http://host:port"
+    echo "[github] Failed to create Release (HTTP 000)"
+    echo "[github] Common causes:"
+    echo "         000 - cannot connect to api.github.com (network, firewall, or proxy issue)"
+    echo "               If using a proxy, set: export https_proxy=http://host:port"
     rm -f "$payload_file"
     return 1
   fi
@@ -283,14 +283,14 @@ release_github() {
 
   local upload_url
   upload_url=$(echo "$release_resp" | grep -o '"upload_url":"[^"]*' | cut -d'"' -f4 | sed 's/{?name,label}//')
-  # 兼容带空格格式
+  # Compatible with space-separated format.
   if [[ -z "$upload_url" ]]; then
     upload_url=$(echo "$release_resp" | grep -o '"upload_url": "[^"]*' | cut -d'"' -f4 | sed 's/{?name,label}//')
   fi
 
-  # Release 已存在（422）→ 获取已有 Release 的 upload_url
+  # Release already exists (422); fetch the existing upload_url.
   if [[ -z "$upload_url" && "$http_code" == "422" ]]; then
-    echo "[github] Release ${VERSION} 已存在（HTTP 422），获取已有 Release..."
+    echo "[github] Release ${VERSION} already exists (HTTP 422); fetching existing Release..."
     local existing_resp
     existing_resp=$(curl -s \
       -H "Authorization: token ${GITHUB_TOKEN}" \
@@ -301,31 +301,31 @@ release_github() {
       upload_url=$(echo "$existing_resp" | grep -o '"upload_url": "[^"]*' | cut -d'"' -f4 | sed 's/{?name,label}//')
     fi
     if [[ -n "$upload_url" ]]; then
-      echo "[github] 已找到现有 Release，追加上传资产..."
+      echo "[github] Found existing Release; uploading additional assets..."
     fi
   fi
 
   if [[ -z "$upload_url" ]]; then
-    echo "[github] 创建 Release 失败（HTTP ${http_code}）"
-    # 提取并显示 API 错误信息
+    echo "[github] Failed to create Release (HTTP ${http_code})"
+    # Extract and show the API error message.
     local api_msg
     api_msg=$(echo "$release_resp" | grep -o '"message":"[^"]*' | cut -d'"' -f4)
     [[ -z "$api_msg" ]] && api_msg=$(echo "$release_resp" | grep -o '"message": "[^"]*' | cut -d'"' -f4)
-    [[ -n "$api_msg" ]] && echo "[github] 错误信息: ${api_msg}"
-    echo "[github] 常见原因："
-    echo "         401 — GITHUB_TOKEN 无效或过期"
-    echo "         403 — Token 缺少 repo/workflow 权限"
-    echo "         404 — 仓库不存在或 Token 无访问权限"
-    echo "         422 — 标签已存在 Release 且获取失败（请手动检查）"
+    [[ -n "$api_msg" ]] && echo "[github] Error message: ${api_msg}"
+    echo "[github] Common causes:"
+    echo "         401 - GITHUB_TOKEN is invalid or expired"
+    echo "         403 - token lacks repo/workflow permissions"
+    echo "         404 - repository does not exist or token has no access"
+    echo "         422 - tag already has a Release and fetching it failed; check manually"
     return 1
   fi
 
-  echo "[github] Release 就绪，开始上传资产..."
+  echo "[github] Release ready; uploading assets..."
 
   for asset in "${RELEASE_DIR}"/*; do
     local fname
     fname=$(basename "$asset")
-    echo -n "[github] 上传 ${fname} ... "
+    echo -n "[github] Uploading ${fname} ... "
     if curl -s -X POST \
       -H "Authorization: token ${GITHUB_TOKEN}" \
       -H "Accept: application/vnd.github.v3+json" \
@@ -338,7 +338,7 @@ release_github() {
     fi
   done
 
-  echo "[github] 发布完成: https://github.com/${repo}/releases/tag/${VERSION}"
+  echo "[github] Published: https://github.com/${repo}/releases/tag/${VERSION}"
 }
 
 # ========================================
@@ -348,12 +348,12 @@ release_npm() {
   local npm_dir="${ROOT}/npm-wrapper"
 
   if [[ ! -f "${npm_dir}/package.json" ]]; then
-    echo "[npm] npm-wrapper/package.json 不存在，跳过 npm 发布"
+    echo "[npm] npm-wrapper/package.json does not exist; skipping npm publish"
     return 1
   fi
 
-  # 同步 package.json 版本号（去掉 v 前缀）
-  # 注意：用 cd + 相对路径，避免 Git Bash 的 Unix 路径在 Windows Node.js 上解析错误
+  # Sync package.json version without the v prefix.
+  # Use cd plus relative paths to avoid Git Bash Unix path parsing issues on Windows Node.js.
   local semver="${VERSION#v}"
   if command -v node >/dev/null 2>&1; then
     (cd "${npm_dir}" && node -e "
@@ -364,33 +364,33 @@ release_npm() {
       console.log('[npm] package.json version → ' + pkg.version);
     ")
   else
-    echo "[npm] 未找到 node，跳过版本号同步"
+    echo "[npm] node not found; skipping version sync"
   fi
 
-  # 检查 npm 登录态（需提前 npm login 或设置 NPM_TOKEN）
-  # 全部操作在 cd 后的子 shell 里执行，避免路径转换问题
-  echo "[npm] 发布 @tier0/cli@${semver} ..."
+  # Check npm auth state; requires npm login or NPM_TOKEN.
+  # Run operations in a subshell after cd to avoid path conversion issues.
+  echo "[npm] Publishing @tier0/cli@${semver} ..."
   if (
     cd "${npm_dir}"
     if [[ -n "${NPM_TOKEN:-}" ]]; then
-      echo "[npm] 使用 NPM_TOKEN 认证..."
+      echo "[npm] Authenticating with NPM_TOKEN..."
       echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc
     fi
     trap 'rm -f .npmrc' EXIT
     npm publish --access public
   ); then
-    echo "[npm] 发布成功: https://www.npmjs.com/package/@tier0/cli"
+    echo "[npm] Published: https://www.npmjs.com/package/@tier0/cli"
   else
-    echo "[npm] 发布失败，请检查："
-    echo "      1. npm 已登录（npm whoami）或已设置 NPM_TOKEN"
-    echo "      2. 包名 @tier0/cli 的发布权限（需 @tier0 org 成员）"
+    echo "[npm] Publish failed; check:"
+    echo "      1. npm is logged in (npm whoami) or NPM_TOKEN is set"
+    echo "      2. publish permission for @tier0/cli; @tier0 org membership is required"
     return 1
   fi
 }
 
-# 尝试发布
+# Try publishing.
 echo "========================================"
-echo "  发布阶段"
+echo "  Publish stage"
 echo "========================================"
 echo ""
 
@@ -399,12 +399,12 @@ if release_github; then
   GITHUB_OK=1
 else
   echo ""
-  echo "[release] GitHub Release 失败，跳过 npm publish（版本未就绪，不应发布 npm）"
+  echo "[release] GitHub Release failed; skipping npm publish because the version is not ready"
 fi
 
 echo ""
 
-# npm publish 仅在 GitHub Release 成功后执行
+# Run npm publish only after GitHub Release succeeds.
 if [[ "${GITHUB_OK}" == "1" ]]; then
   release_npm || true
 fi
@@ -413,4 +413,4 @@ echo ""
 echo "========================================"
 echo "  Done"
 echo "========================================"
-echo "构建产物: ${RELEASE_DIR}"
+echo "Build artifacts: ${RELEASE_DIR}"

@@ -1,17 +1,13 @@
 package cmd
 
 import (
-	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
 	"github.com/spf13/cobra"
 )
 
 var flowCmd = &cobra.Command{
 	Use:   "flow",
-	Short: i18n.T("Manage Node-RED Flows", "管理 Node-RED Flow"),
-	Long: i18n.T(
-		"Manage Node-RED Flows in a Workspace (SourceFlow / EventFlow).",
-		"管理 Workspace 中的 Node-RED Flow（SourceFlow / EventFlow）。",
-	),
+	Short: "Manage Node-RED Flows",
+	Long:  "Manage Node-RED Flows in a Workspace (SourceFlow / EventFlow).",
 }
 
 func init() {

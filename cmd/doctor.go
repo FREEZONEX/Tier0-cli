@@ -14,17 +14,14 @@ import (
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
 	"github.com/FREEZONEX/Tier0-cli/internal/config"
 	"github.com/FREEZONEX/Tier0-cli/internal/errs"
-	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
 	"github.com/spf13/cobra"
 )
 
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
-	Short: i18n.T("Diagnose local Tier0 CLI connectivity and auth", "诊断 Tier0 CLI 连通性与鉴权"),
-	Long: i18n.T(
-		"Run local diagnostics for the configured Tier0 instance: base URL, API key presence, OpenAPI connectivity, and API key identity.",
-		"诊断当前 Tier0 配置：平台地址、API Key、OpenAPI 连通性和 API Key 身份。",
-	),
+	Short: "Diagnose local Tier0 CLI connectivity and auth",
+	Long:  "Run local diagnostics for the configured Tier0 instance: base URL, API key presence, OpenAPI connectivity, and API key identity.",
+
 	RunE: runDoctor,
 }
 
@@ -114,7 +111,7 @@ func doctorFailure(checks []doctorCheck) error {
 			break
 		}
 	}
-	return errs.New(category, 0, i18n.T("doctor found issues", "doctor 发现问题")).
+	return errs.New(category, 0, "doctor found issues").
 		WithHint("Review the failed doctor checks above.", "")
 }
 

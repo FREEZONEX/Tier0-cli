@@ -19,13 +19,13 @@ import (
 	"github.com/FREEZONEX/Tier0-cli/internal/version"
 )
 
-// Options 升级选项
+// Options controls upgrade behavior.
 type Options struct {
-	TargetVersion string // 指定升级到的版本（为空则升级到最新）
-	DryRun        bool   // 只检查不安装
+	TargetVersion string // Specific target version; empty means latest.
+	DryRun        bool   // Check only without installing.
 }
 
-// Result 升级结果
+// Result is the upgrade result.
 type Result struct {
 	CurrentVersion string `json:"currentVersion"`
 	LatestVersion  string `json:"latestVersion"`
@@ -89,11 +89,11 @@ func Check() (*Result, error) {
 	return result, nil
 }
 
-// Perform 执行升级。
+// Perform executes the upgrade.
 //
-// 策略（与 lark-cli 一致）：
-//  1. 若 npm 可用 → npm install -g @tier0/cli@<version>（postinstall 负责下二进制）
-//  2. npm 不可用 → 直接从 GitHub Releases 下载二进制并替换
+// Strategy, aligned with lark-cli:
+//  1. If npm is available, run npm install -g @tier0/cli@<version>.
+//  2. Otherwise, download the binary from GitHub Releases and replace it.
 func Perform(opts Options) (*Result, error) {
 	var release *Release
 	var err error
@@ -120,7 +120,7 @@ func Perform(opts Options) (*Result, error) {
 
 	asset := release.FindAsset()
 	if asset == nil {
-		e := fmt.Errorf("未找到适配当前平台 (%s) 的安装包", platformReleaseName())
+		e := fmt.Errorf("no package found for current platform (%s)", platformReleaseName())
 		return &Result{
 			CurrentVersion: version.BuildVersion,
 			LatestVersion:  release.TagName,
@@ -143,7 +143,7 @@ func Perform(opts Options) (*Result, error) {
 		npmResult := RunNpmInstall(release.TagName)
 		if npmResult.Err != nil {
 			// npm failed; fall through to direct download below
-			result.ErrorMessage = fmt.Sprintf("npm install 失败，尝试直接下载: %v", npmResult.Err)
+			result.ErrorMessage = fmt.Sprintf("npm install failed; trying direct download: %v", npmResult.Err)
 		} else {
 			result.Method = "npm"
 			return result, nil
@@ -151,72 +151,72 @@ func Perform(opts Options) (*Result, error) {
 	}
 
 	// ── Path 2: direct GitHub download ───────────────────────────────────
-	// 安全提示：npm 路径的 JS wrapper 经 npm registry 校验，推荐优先使用。
-	// 直接下载路径会验证 SHA256 checksum，但建议安装 Node.js 以使用 npm 路径。
+	// Security note: the npm path benefits from npm registry verification and
+	// is preferred. Direct download verifies SHA256 checksums as a fallback.
 	result.Method = "github"
 	binaryPath, err := os.Executable()
 	if err != nil {
-		result.ErrorMessage = fmt.Sprintf("无法获取可执行文件路径: %v", err)
+		result.ErrorMessage = fmt.Sprintf("failed to get executable path: %v", err)
 		return result, err
 	}
 	binaryPath, err = filepath.EvalSymlinks(binaryPath)
 	if err != nil {
-		result.ErrorMessage = fmt.Sprintf("无法解析可执行文件路径: %v", err)
+		result.ErrorMessage = fmt.Sprintf("failed to resolve executable path: %v", err)
 		return result, err
 	}
 
 	if err := backupBinary(binaryPath, version.BuildVersion); err != nil {
-		result.ErrorMessage = fmt.Sprintf("备份失败: %v", err)
+		result.ErrorMessage = fmt.Sprintf("backup failed: %v", err)
 		return result, err
 	}
 
 	tmpDir, err := os.MkdirTemp("", "tier0-upgrade-*")
 	if err != nil {
-		result.ErrorMessage = fmt.Sprintf("创建临时目录失败: %v", err)
+		result.ErrorMessage = fmt.Sprintf("failed to create temporary directory: %v", err)
 		return result, err
 	}
 	defer os.RemoveAll(tmpDir)
 
 	archivePath := filepath.Join(tmpDir, asset.Name)
 	if err := downloadFile(asset.BrowserDownloadURL, archivePath); err != nil {
-		result.ErrorMessage = fmt.Sprintf("下载失败: %v", err)
+		result.ErrorMessage = fmt.Sprintf("download failed: %v", err)
 		return result, err
 	}
 
-	// 下载并验证 SHA256 checksum，防止传输被篡改或文件损坏
+	// Download and verify SHA256 checksum to detect tampering or corruption.
 	if err := verifyReleaseChecksum(release.TagName, asset.Name, archivePath); err != nil {
-		result.ErrorMessage = fmt.Sprintf("SHA256 校验失败: %v", err)
+		result.ErrorMessage = fmt.Sprintf("SHA256 verification failed: %v", err)
 		return result, err
 	}
 
 	extractDir := filepath.Join(tmpDir, "extracted")
 	if err := os.MkdirAll(extractDir, 0o755); err != nil {
-		result.ErrorMessage = fmt.Sprintf("创建解压目录失败: %v", err)
+		result.ErrorMessage = fmt.Sprintf("failed to create extraction directory: %v", err)
 		return result, err
 	}
 
 	if err := extract(archivePath, extractDir); err != nil {
-		result.ErrorMessage = fmt.Sprintf("解压失败: %v", err)
+		result.ErrorMessage = fmt.Sprintf("extraction failed: %v", err)
 		return result, err
 	}
 
 	newBinary, err := findBinary(extractDir)
 	if err != nil {
-		result.ErrorMessage = fmt.Sprintf("查找新版本二进制失败: %v", err)
+		result.ErrorMessage = fmt.Sprintf("failed to find new binary: %v", err)
 		return result, err
 	}
 
 	if err := replaceBinary(newBinary, binaryPath); err != nil {
-		result.ErrorMessage = fmt.Sprintf("替换二进制失败: %v（旧版本已备份到 ~/.tier0/backup/）", err)
+		result.ErrorMessage = fmt.Sprintf("failed to replace binary: %v; old version was backed up to ~/.tier0/backup/", err)
 		return result, err
 	}
 
 	return result, nil
 }
 
-// verifyReleaseChecksum 从 GitHub Release 下载 sha256sums.txt，
-// 找到与 assetName 对应的期望值，并与本地文件的实际 SHA256 比对。
-// 校验失败直接返回错误，阻止安装继续进行。
+// verifyReleaseChecksum downloads sha256sums.txt from the GitHub Release,
+// finds the expected value for assetName, and compares it with the local file.
+// Verification failure stops installation.
 func verifyReleaseChecksum(version, assetName, localPath string) error {
 	sumsURL := fmt.Sprintf(
 		"https://github.com/%s/%s/releases/download/%s/sha256sums.txt",
@@ -225,15 +225,15 @@ func verifyReleaseChecksum(version, assetName, localPath string) error {
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Get(sumsURL)
 	if err != nil {
-		return fmt.Errorf("下载 sha256sums.txt 失败: %w", err)
+		return fmt.Errorf("failed to download sha256sums.txt: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("sha256sums.txt 返回 HTTP %d", resp.StatusCode)
+		return fmt.Errorf("sha256sums.txt returned HTTP %d", resp.StatusCode)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return fmt.Errorf("读取 sha256sums.txt 失败: %w", err)
+		return fmt.Errorf("failed to read sha256sums.txt: %w", err)
 	}
 
 	expected, err := parseChecksum(string(body), assetName)
@@ -243,24 +243,24 @@ func verifyReleaseChecksum(version, assetName, localPath string) error {
 
 	actual, err := sha256File(localPath)
 	if err != nil {
-		return fmt.Errorf("计算本地文件 SHA256 失败: %w", err)
+		return fmt.Errorf("failed to calculate local file SHA256: %w", err)
 	}
 
 	if !strings.EqualFold(actual, expected) {
-		return fmt.Errorf("SHA256 不匹配（可能下载损坏或被篡改）:\n  期望: %s\n  实际: %s", expected, actual)
+		return fmt.Errorf("SHA256 mismatch; download may be corrupted or tampered with:\n  expected: %s\n  actual: %s", expected, actual)
 	}
 	return nil
 }
 
-// parseChecksum 从 sha256sum(1) 格式的文本中提取指定文件名对应的 SHA256。
-// 格式为：<hash>  <filename>（两个空格分隔）
+// parseChecksum extracts the SHA256 for filename from sha256sum(1) text.
+// Format: <hash>  <filename>.
 func parseChecksum(sumsText, filename string) (string, error) {
 	for _, line := range strings.Split(sumsText, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		// sha256sum 格式：hash  filename（普通文件）或 hash *filename（二进制模式）
+		// sha256sum format: hash  filename, or hash *filename in binary mode.
 		parts := strings.Fields(line)
 		if len(parts) < 2 {
 			continue
@@ -270,10 +270,10 @@ func parseChecksum(sumsText, filename string) (string, error) {
 			return strings.ToLower(parts[0]), nil
 		}
 	}
-	return "", fmt.Errorf("sha256sums.txt 中未找到文件 %q 的校验和", filename)
+	return "", fmt.Errorf("checksum for file %q not found in sha256sums.txt", filename)
 }
 
-// sha256File 计算文件的 SHA256 十六进制字符串。
+// sha256File computes the SHA256 hex string for a file.
 func sha256File(path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -287,7 +287,7 @@ func sha256File(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// BackupDir 返回备份目录
+// BackupDir returns the backup directory.
 func BackupDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -299,7 +299,7 @@ func BackupDir() string {
 func backupBinary(binaryPath, oldVersion string) error {
 	dir := BackupDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("创建备份目录失败: %w", err)
+		return fmt.Errorf("failed to create backup directory: %w", err)
 	}
 
 	backupName := filepath.Base(binaryPath) + "-" + oldVersion
@@ -310,18 +310,18 @@ func backupBinary(binaryPath, oldVersion string) error {
 
 	src, err := os.Open(binaryPath)
 	if err != nil {
-		return fmt.Errorf("读取当前二进制失败: %w", err)
+		return fmt.Errorf("failed to read current binary: %w", err)
 	}
 	defer src.Close()
 
 	dst, err := os.Create(backupPath)
 	if err != nil {
-		return fmt.Errorf("创建备份文件失败: %w", err)
+		return fmt.Errorf("failed to create backup file: %w", err)
 	}
 	defer dst.Close()
 
 	if _, err := io.Copy(dst, src); err != nil {
-		return fmt.Errorf("写入备份文件失败: %w", err)
+		return fmt.Errorf("failed to write backup file: %w", err)
 	}
 
 	if runtime.GOOS != "windows" {
@@ -335,22 +335,22 @@ func downloadFile(url, dest string) error {
 	client := &http.Client{Timeout: 5 * time.Minute}
 	resp, err := client.Get(url)
 	if err != nil {
-		return fmt.Errorf("下载请求失败: %w", err)
+		return fmt.Errorf("download request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("下载返回状态码 %d", resp.StatusCode)
+		return fmt.Errorf("download returned status code %d", resp.StatusCode)
 	}
 
 	f, err := os.Create(dest)
 	if err != nil {
-		return fmt.Errorf("创建下载文件失败: %w", err)
+		return fmt.Errorf("failed to create download file: %w", err)
 	}
 	defer f.Close()
 
 	if _, err := io.Copy(f, resp.Body); err != nil {
-		return fmt.Errorf("写入下载文件失败: %w", err)
+		return fmt.Errorf("failed to write download file: %w", err)
 	}
 
 	return nil
@@ -363,7 +363,7 @@ func extract(archivePath, destDir string) error {
 	if strings.HasSuffix(archivePath, ".zip") {
 		return extractZip(archivePath, destDir)
 	}
-	return fmt.Errorf("不支持的压缩格式: %s", filepath.Base(archivePath))
+	return fmt.Errorf("unsupported archive format: %s", filepath.Base(archivePath))
 }
 
 func extractTarGz(archivePath, destDir string) error {
@@ -479,7 +479,7 @@ func findBinary(dir string) (string, error) {
 		return "", err
 	}
 	if found == "" {
-		return "", fmt.Errorf("未在安装包中找到 tier0 二进制文件")
+		return "", fmt.Errorf("tier0 binary not found in package")
 	}
 	return found, nil
 }
@@ -487,17 +487,17 @@ func findBinary(dir string) (string, error) {
 func replaceBinary(newPath, oldPath string) error {
 	if runtime.GOOS == "windows" {
 		oldBak := oldPath + ".old"
-		// 清理可能存在的旧备份，否则 rename 会失败
+		// Remove a stale backup if present; otherwise rename can fail.
 		os.Remove(oldBak)
 		if err := os.Rename(oldPath, oldBak); err != nil {
-			return fmt.Errorf("备份旧版本失败: %w", err)
+			return fmt.Errorf("failed to back up old version: %w", err)
 		}
 		if err := os.Rename(newPath, oldPath); err != nil {
-			// 回滚
+			// Roll back.
 			os.Rename(oldBak, oldPath)
-			return fmt.Errorf("替换新版本失败: %w", err)
+			return fmt.Errorf("failed to replace with new version: %w", err)
 		}
-		// Windows 下正在运行的旧文件可能无法立即删除，忽略该错误
+		// Windows may not immediately delete a running old file; ignore this.
 		os.Remove(oldBak)
 		return nil
 	}
@@ -510,9 +510,9 @@ func replaceBinary(newPath, oldPath string) error {
 		return err
 	}
 
-	// macOS: 从网络下载的二进制经 rename 替换后，AMFI/Gatekeeper 可能
-	// 因签名状态不干净而 SIGKILL 新进程（exit:137）。
-	// 用 ad-hoc 签名修复，并移除 quarantine 扩展属性。
+	// macOS: after replacing a downloaded binary with rename, AMFI/Gatekeeper
+	// may SIGKILL the new process if the signing state is not clean. Repair with
+	// ad-hoc signing and remove the quarantine extended attribute.
 	if runtime.GOOS == "darwin" {
 		fixMacOSSigning(oldPath)
 	}
@@ -520,21 +520,21 @@ func replaceBinary(newPath, oldPath string) error {
 	return nil
 }
 
-// fixMacOSSigning 对 macOS 上刚替换的二进制施加 ad-hoc 签名并移除
-// quarantine 标记，防止 AMFI/Gatekeeper 在下次执行时 SIGKILL 进程。
-// 两步操作均为 best-effort：codesign 或 xattr 不存在时静默跳过，
-// 不应因此阻断升级流程。
+// fixMacOSSigning applies ad-hoc signing to a replaced macOS binary and removes
+// quarantine so AMFI/Gatekeeper does not SIGKILL the next execution. Both steps
+// are best-effort and should not block upgrade if tools are unavailable.
 func fixMacOSSigning(binaryPath string) {
-	// Step 1: 移除 quarantine 扩展属性（从 URL 下载的文件会被打标）
-	// xattr -d com.apple.quarantine <path> — 不存在属性时会返回非零但无害
+	// Step 1: remove the quarantine extended attribute added to URL downloads.
+	// xattr returns non-zero when the attribute does not exist; that is harmless.
 	execQuiet("xattr", "-d", "com.apple.quarantine", binaryPath)
 
-	// Step 2: ad-hoc 签名（-s - 表示 ad-hoc identity，-f 强制覆盖已有签名）
-	// 这是没有 Apple 开发者证书时的标准做法，与 Homebrew 的 brew reinstall 逻辑一致。
+	// Step 2: ad-hoc sign with -s - and force replacement with -f.
+	// This matches the standard approach used when no Apple developer
+	// certificate is available.
 	execQuiet("codesign", "-f", "-s", "-", binaryPath)
 }
 
-// execQuiet 运行外部命令，忽略所有输出和错误。
+// execQuiet runs an external command and ignores all output and errors.
 func execQuiet(name string, args ...string) {
 	cmd := exec.Command(name, args...)
 	_ = cmd.Run()

@@ -2,30 +2,26 @@ package cmd
 
 import (
 	"fmt"
+	"github.com/spf13/cobra"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
-
-	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
-	"github.com/spf13/cobra"
 )
 
 var uninstallCmd = &cobra.Command{
 	Use:   "uninstall",
-	Short: i18n.T("Uninstall tier0 CLI and agent skills", "卸载 tier0 CLI 及 Agent Skills"),
-	Long: i18n.T(
-		"Remove the tier0 binary, bundled skills, and Cursor/Claude agent skills.\nThe config file (~/.tier0/config.json) is kept by default; use --purge to delete it.",
-		"移除 tier0 二进制、本地 skills 文档及 Cursor/Claude Agent Skills。\n默认保留配置文件（~/.tier0/config.json），使用 --purge 彻底清除。",
-	),
+	Short: "Uninstall tier0 CLI and agent skills",
+	Long:  "Remove the tier0 binary, bundled skills, and Cursor/Claude agent skills.\nThe config file (~/.tier0/config.json) is kept by default; use --purge to delete it.",
+
 	RunE: runUninstall,
 }
 
 func init() {
 	uninstallCmd.Flags().Bool("purge", false,
-		i18n.T("Also delete config file (credentials)", "同时删除配置文件（含登录凭证）"))
+		"Also delete config file (credentials)")
 	uninstallCmd.Flags().Bool("keep-skills", false,
-		i18n.T("Skip agent skills removal", "跳过 Agent Skills 卸载"))
+		"Skip agent skills removal")
 }
 
 func runUninstall(cmd *cobra.Command, args []string) error {
@@ -35,7 +31,7 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return fmt.Errorf(i18n.T("cannot determine home directory: %w", "无法获取用户目录: %w"), err)
+		return fmt.Errorf("cannot determine home directory: %w", err)
 	}
 
 	tier0Dir := filepath.Join(home, ".tier0")
@@ -43,7 +39,8 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 	skillsDir := filepath.Join(tier0Dir, "skills")
 	configFile := filepath.Join(tier0Dir, "config.json")
 
-	fmt.Fprintln(stdout, i18n.T("Uninstalling tier0 CLI...\n", "正在卸载 tier0 CLI...\n"))
+	fmt.Fprintln(stdout, "Uninstalling tier0 CLI...")
+	fmt.Fprintln(stdout)
 
 	removed := 0
 
@@ -53,10 +50,10 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 		binName = "tier0.exe"
 	}
 	binPath := filepath.Join(binDir, binName)
-	if removeFile(stdout, binPath, i18n.T("binary", "二进制文件")) {
+	if removeFile(stdout, binPath, "binary") {
 		removed++
 	}
-	removeFile(stdout, filepath.Join(binDir, ".version"), i18n.T("version record", "版本记录"))
+	removeFile(stdout, filepath.Join(binDir, ".version"), "version record")
 
 	// Remove bin dir if empty
 	if entries, err := os.ReadDir(binDir); err == nil && len(entries) == 0 {
@@ -64,43 +61,41 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 	}
 
 	// Remove bundled skills docs
-	if removeDir(stdout, skillsDir, i18n.T("bundled skills", "本地 skills 文档")) {
+	if removeDir(stdout, skillsDir, "bundled skills") {
 		removed++
 	}
 
 	// Config handling
 	if purge {
-		if removeFile(stdout, configFile, i18n.T("config (credentials)", "配置文件（含凭证）")) {
+		if removeFile(stdout, configFile, "config (credentials)") {
 			removed++
 		}
 		if entries, err := os.ReadDir(tier0Dir); err == nil && len(entries) == 0 {
 			os.Remove(tier0Dir)
-			fmt.Fprintf(stdout, i18n.T("✓ Removed %s\n", "✓ 已删除 %s\n"), tier0Dir)
+			fmt.Fprintf(stdout, "✓ Removed %s\n", tier0Dir)
 		}
 	} else {
-		fmt.Fprintf(stdout, i18n.T(
+		fmt.Fprintf(stdout,
 			"\n  Config kept: %s\n  Run with --purge to also remove credentials.\n",
-			"\n  配置文件已保留: %s\n  使用 --purge 可同时删除登录凭证。\n",
-		), configFile)
+			configFile)
 	}
 
 	// Remove agent skills
 	if !keepSkills {
-		fmt.Fprintln(stdout, i18n.T("\nRemoving agent skills...", "\n正在移除 Agent Skills..."))
+		fmt.Fprintln(stdout, "\nRemoving agent skills...")
 		if err := runNpxSkillsRemove(); err != nil {
-			fmt.Fprintf(stdout, i18n.T(
+			fmt.Fprintf(stdout,
 				"⚠ Agent skills removal failed (non-fatal): %s\n  Run manually: npx skills remove FREEZONEX/Tier0-skill\n",
-				"⚠ Agent Skills 移除失败（非致命）: %s\n  可手动运行: npx skills remove FREEZONEX/Tier0-skill\n",
-			), err)
+				err)
 		} else {
-			fmt.Fprintln(stdout, i18n.T("✓ Agent skills removed.", "✓ Agent Skills 已移除。"))
+			fmt.Fprintln(stdout, "✓ Agent skills removed.")
 		}
 	}
 
 	if removed == 0 {
-		fmt.Fprintln(stdout, i18n.T("\ntier0 CLI was not installed (nothing to remove).", "\ntier0 CLI 未安装，无需卸载。"))
+		fmt.Fprintln(stdout, "\ntier0 CLI was not installed (nothing to remove).")
 	} else {
-		fmt.Fprintln(stdout, i18n.T("\ntier0 CLI uninstalled successfully.", "\ntier0 CLI 卸载完成。"))
+		fmt.Fprintln(stdout, "\ntier0 CLI uninstalled successfully.")
 	}
 	return nil
 }
@@ -110,10 +105,10 @@ func removeFile(stdout interface{ Write([]byte) (int, error) }, path, label stri
 		return false
 	}
 	if err := os.Remove(path); err != nil {
-		fmt.Fprintf(stdout, i18n.T("⚠ Failed to remove %s: %s\n", "⚠ 删除 %s 失败: %s\n"), label, err)
+		fmt.Fprintf(stdout, "⚠ Failed to remove %s: %s\n", label, err)
 		return false
 	}
-	fmt.Fprintf(stdout, i18n.T("✓ Removed %s: %s\n", "✓ 已删除 %s: %s\n"), label, path)
+	fmt.Fprintf(stdout, "✓ Removed %s: %s\n", label, path)
 	return true
 }
 
@@ -122,10 +117,10 @@ func removeDir(stdout interface{ Write([]byte) (int, error) }, path, label strin
 		return false
 	}
 	if err := os.RemoveAll(path); err != nil {
-		fmt.Fprintf(stdout, i18n.T("⚠ Failed to remove %s: %s\n", "⚠ 删除 %s 失败: %s\n"), label, err)
+		fmt.Fprintf(stdout, "⚠ Failed to remove %s: %s\n", label, err)
 		return false
 	}
-	fmt.Fprintf(stdout, i18n.T("✓ Removed %s: %s\n", "✓ 已删除 %s: %s\n"), label, path)
+	fmt.Fprintf(stdout, "✓ Removed %s: %s\n", label, path)
 	return true
 }
 

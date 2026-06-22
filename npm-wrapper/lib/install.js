@@ -10,8 +10,8 @@ const REPO = 'FREEZONEX/Tier0-cli';
 const BIN_DIR = path.join(require('os').homedir(), '.tier0', 'bin');
 const VERSION_FILE = path.join(BIN_DIR, '.version');
 
-// 版本直接取自 package.json，与 Go Release 强制同步（参考 Lark CLI 做法）
-// 不再调 GitHub API 取 latest，避免 GitHub Release 滞后导致安装旧版本
+// Read the version directly from package.json and keep it in sync with the Go release, following the Lark CLI approach.
+// Do not call the GitHub API for latest; this avoids stale GitHub Release metadata installing an old version.
 const VERSION = `v${require('../package.json').version}`;
 
 function platformName() {
@@ -93,7 +93,7 @@ function downloadFile(url, dest) {
   });
 }
 
-/** 下载文本内容（用于 sha256sums.txt）*/
+/** Download text content, used for sha256sums.txt. */
 function fetchText(url) {
   return new Promise((resolve, reject) => {
     https.get(url, { timeout: 30000 }, (res) => {
@@ -111,8 +111,8 @@ function fetchText(url) {
 }
 
 /**
- * 从 sha256sum(1) 格式文本中找到 filename 对应的期望哈希。
- * 格式：<hash>  <filename>  （两个空格；或 <hash> *<filename> 二进制模式）
+ * Find the expected hash for filename in sha256sum(1) text.
+ * Format: <hash>  <filename>, or <hash> *<filename> in binary mode.
  */
 function parseChecksum(sumsText, filename) {
   for (const rawLine of sumsText.split('\n')) {
@@ -128,7 +128,7 @@ function parseChecksum(sumsText, filename) {
   return null;
 }
 
-/** 计算本地文件的 SHA256 十六进制摘要 */
+/** Compute the SHA256 hex digest for a local file. */
 function sha256File(filePath) {
   return new Promise((resolve, reject) => {
     const hash = crypto.createHash('sha256');
@@ -140,8 +140,8 @@ function sha256File(filePath) {
 }
 
 /**
- * 下载 sha256sums.txt 并校验本地文件。
- * 校验失败时 reject，由调用方决定是否中断安装。
+ * Download sha256sums.txt and verify the local file.
+ * Reject on verification failure; the caller decides whether to stop installation.
  */
 async function verifyChecksum(version, pkgName, localPath) {
   const sumsUrl = `https://github.com/${REPO}/releases/download/${version}/sha256sums.txt`;
@@ -149,18 +149,18 @@ async function verifyChecksum(version, pkgName, localPath) {
   try {
     sumsText = await fetchText(sumsUrl);
   } catch (err) {
-    throw new Error(`下载 sha256sums.txt 失败: ${err.message}`);
+    throw new Error(`failed to download sha256sums.txt: ${err.message}`);
   }
 
   const expected = parseChecksum(sumsText, pkgName);
   if (!expected) {
-    throw new Error(`sha256sums.txt 中未找到 "${pkgName}" 的校验和`);
+    throw new Error(`checksum for "${pkgName}" not found in sha256sums.txt`);
   }
 
   const actual = await sha256File(localPath);
   if (actual !== expected) {
     throw new Error(
-      `SHA256 校验失败（文件可能损坏或被篡改）:\n  期望: ${expected}\n  实际: ${actual}`
+      `SHA256 verification failed; the file may be corrupted or tampered with:\n  expected: ${expected}\n  actual: ${actual}`
     );
   }
 }
@@ -204,7 +204,7 @@ async function install({ force = false } = {}) {
     console.log(`Downloading ${pkgName}...`);
     await downloadFile(downloadUrl, tmpFile);
 
-    // SHA256 校验：防止下载损坏或 MITM 篡改
+    // SHA256 verification protects against corrupted downloads or MITM tampering.
     console.log('Verifying checksum...');
     await verifyChecksum(version, pkgName, tmpFile);
     console.log('✓ Checksum verified.');
@@ -244,7 +244,7 @@ async function install({ force = false } = {}) {
     }
     fs.writeFileSync(VERSION_FILE, version);
 
-    // 同步安装 skills 文档
+    // Install skills documentation.
     const foundSkillDir = findSkillDir(extractDir);
     if (foundSkillDir) {
       const skillsDest = path.join(require('os').homedir(), '.tier0', 'skills');

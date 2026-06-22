@@ -5,26 +5,23 @@ import (
 	"os"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
-	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
 	"github.com/FREEZONEX/Tier0-cli/internal/notice"
 	"github.com/spf13/cobra"
 )
 
 var apiCmd = &cobra.Command{
 	Use:   "api <endpoint>",
-	Short: i18n.T("Call an API endpoint directly", "直接调用 API 接口"),
-	Long: i18n.T(
-		"Call a backend API endpoint directly. Useful for debugging and advanced use.\n\nExamples:\n  tier0 api /openapi/v1/uns/browse --body '{\"path\":\"/\"}'\n  tier0 api /openapi/v1/uns/read --body '{\"topics\":[\"demo\"]}'\n  tier0 api /openapi/v1/uns/write --body-file body.json",
-		"直接调用后端 API 接口。用于调试和高级场景。\n\n示例:\n  tier0 api /openapi/v1/uns/browse --body '{\"path\":\"/\"}'\n  tier0 api /openapi/v1/uns/read --body '{\"topics\":[\"demo\"]}'\n  tier0 api /openapi/v1/uns/write --body-file body.json",
-	),
+	Short: "Call an API endpoint directly",
+	Long:  "Call a backend API endpoint directly. Useful for debugging and advanced use.\n\nExamples:\n  tier0 api /openapi/v1/uns/browse --body '{\"path\":\"/\"}'\n  tier0 api /openapi/v1/uns/read --body '{\"topics\":[\"demo\"]}'\n  tier0 api /openapi/v1/uns/write --body-file body.json",
+
 	Args: cobra.MinimumNArgs(1),
 	RunE: runAPI,
 }
 
 func init() {
-	apiCmd.Flags().String("body", "", i18n.T("Request body JSON string", "请求体 JSON 字符串"))
-	apiCmd.Flags().String("body-file", "", i18n.T("Read request body from file", "从文件读取请求体"))
-	apiCmd.Flags().String("method", "POST", i18n.T("HTTP method (GET|POST|PUT|DELETE)", "HTTP 方法"))
+	apiCmd.Flags().String("body", "", "Request body JSON string")
+	apiCmd.Flags().String("body-file", "", "Read request body from file")
+	apiCmd.Flags().String("method", "POST", "HTTP method (GET|POST|PUT|DELETE)")
 }
 
 func runAPI(cmd *cobra.Command, args []string) error {

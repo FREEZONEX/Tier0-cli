@@ -5,38 +5,35 @@ import (
 	"fmt"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
-	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
 	"github.com/FREEZONEX/Tier0-cli/internal/notice"
 	"github.com/spf13/cobra"
 )
 
 var unsUpdateCmd = &cobra.Command{
 	Use:   "update",
-	Short: i18n.T("Update UNS topic metadata", "更新 UNS 点位元数据"),
-	Long: i18n.T(
-		"Update metadata of an existing UNS topic.\n\nExamples:\n  tier0 uns update --path Plant/Line1/Metric/Temperature --display-name 'Line 1 Temp'\n  tier0 uns update --path Plant/Line1 --description 'Production line 1' --update-mask description\n  tier0 uns update --path Plant/Line1/Metric/Temperature --fields '[{\"name\":\"temp\",\"type\":\"float\",\"unit\":\"C\"}]' --update-mask fields",
-		"更新现有 UNS 点位的元数据。\n\n示例:\n  tier0 uns update --path Plant/Line1/Metric/Temperature --display-name 'Line 1 Temp'\n  tier0 uns update --path Plant/Line1 --description 'Production line 1' --update-mask description\n  tier0 uns update --path Plant/Line1/Metric/Temperature --fields '[{\"name\":\"temp\",\"type\":\"float\",\"unit\":\"C\"}]' --update-mask fields",
-	),
+	Short: "Update UNS topic metadata",
+	Long:  "Update metadata of an existing UNS topic.\n\nExamples:\n  tier0 uns update --path Plant/Line1/Metric/Temperature --display-name 'Line 1 Temp'\n  tier0 uns update --path Plant/Line1 --description 'Production line 1' --update-mask description\n  tier0 uns update --path Plant/Line1/Metric/Temperature --fields '[{\"name\":\"temp\",\"type\":\"float\",\"unit\":\"C\"}]' --update-mask fields",
+
 	RunE: runUnsUpdate,
 }
 
 func init() {
 	unsUpdateCmd.Flags().StringP("path", "p", "",
-		i18n.T("Topic path to update (required)", "要更新的点位路径（必填）"))
+		"Topic path to update (required)")
 	unsUpdateCmd.Flags().StringP("name", "n", "",
-		i18n.T("New name", "新名称"))
+		"New name")
 	unsUpdateCmd.Flags().String("alias", "",
-		i18n.T("New alias", "新别名"))
+		"New alias")
 	unsUpdateCmd.Flags().String("description", "",
-		i18n.T("New description", "新描述"))
+		"New description")
 	unsUpdateCmd.Flags().StringP("display-name", "d", "",
-		i18n.T("New display name", "新显示名称"))
+		"New display name")
 	unsUpdateCmd.Flags().String("extend-properties", "",
-		i18n.T("Extended properties JSON object", "扩展属性 JSON 对象"))
+		"Extended properties JSON object")
 	unsUpdateCmd.Flags().String("fields", "",
-		i18n.T("Schema fields JSON array", "Schema 字段 JSON 数组"))
+		"Schema fields JSON array")
 	unsUpdateCmd.Flags().StringSlice("update-mask", nil,
-		i18n.T("Fields to update (repeatable, e.g. name,description,fields)", "要更新的字段（可重复指定，如 name,description,fields）"))
+		"Fields to update (repeatable, e.g. name,description,fields)")
 	unsUpdateCmd.MarkFlagRequired("path")
 }
 
@@ -69,14 +66,14 @@ func runUnsUpdate(cmd *cobra.Command, args []string) error {
 	if extendProps != "" {
 		var props map[string]any
 		if err := json.Unmarshal([]byte(extendProps), &props); err != nil {
-			return fmt.Errorf(i18n.T("invalid extend-properties JSON: %w", "extend-properties JSON 无效: %w"), err)
+			return fmt.Errorf("invalid extend-properties JSON: %w", err)
 		}
 		payload["extendProperties"] = props
 	}
 	if fields != "" {
 		var fieldList []any
 		if err := json.Unmarshal([]byte(fields), &fieldList); err != nil {
-			return fmt.Errorf(i18n.T("invalid fields JSON: %w", "fields JSON 无效: %w"), err)
+			return fmt.Errorf("invalid fields JSON: %w", err)
 		}
 		payload["fields"] = fieldList
 	}
@@ -96,7 +93,7 @@ func runUnsUpdate(cmd *cobra.Command, args []string) error {
 	stdout := cmd.OutOrStdout()
 	checker.Emit(resp, jsonMode, stdout, cmd.ErrOrStderr())
 	if !jsonMode {
-		fmt.Fprintf(stdout, i18n.T("Topic updated: %s\n", "点位更新成功: %s\n"), path)
+		fmt.Fprintf(stdout, "Topic updated: %s\n", path)
 	}
 	return nil
 }

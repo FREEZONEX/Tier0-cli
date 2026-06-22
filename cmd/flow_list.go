@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
-	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
 	"github.com/FREEZONEX/Tier0-cli/internal/notice"
 	"github.com/spf13/cobra"
 )
@@ -19,19 +18,19 @@ const (
 var flowListCmd = &cobra.Command{
 	Use:     "list",
 	Aliases: []string{"ls"},
-	Short:   i18n.T("List flows", "列出 Flow"),
+	Short:   "List flows",
 	RunE:    runFlowList,
 }
 
 func init() {
 	flowListCmd.Flags().StringP("keyword", "k", "",
-		i18n.T("Filter by name keyword", "按名称关键字过滤"))
+		"Filter by name keyword")
 	flowListCmd.Flags().StringP("type", "t", "",
-		i18n.T("Filter by type (SourceFlow/EventFlow)", "按类型过滤 (SourceFlow/EventFlow)"))
+		"Filter by type (SourceFlow/EventFlow)")
 	flowListCmd.Flags().Bool("source", false,
-		i18n.T("Show SourceFlow only", "仅显示 SourceFlow"))
+		"Show SourceFlow only")
 	flowListCmd.Flags().Bool("event", false,
-		i18n.T("Show EventFlow only", "仅显示 EventFlow"))
+		"Show EventFlow only")
 }
 
 func runFlowList(cmd *cobra.Command, args []string) error {
@@ -82,15 +81,15 @@ func runFlowList(cmd *cobra.Command, args []string) error {
 	}
 	if len(result.List) == 0 {
 		checker.Emit("", false, stdout, cmd.ErrOrStderr())
-		fmt.Fprintln(stdout, i18n.T("No flows found.", "暂无 Flow。"))
+		fmt.Fprintln(stdout, "No flows found.")
 		return nil
 	}
 	fmt.Fprintf(stdout, "%-6s  %-12s  %-26s  %-8s  %s\n",
-		i18n.T("ID", "ID"),
-		i18n.T("Type", "类型"),
-		i18n.T("Name", "名称"),
-		i18n.T("Status", "状态"),
-		i18n.T("Description", "说明"),
+		"ID",
+		"Type",
+		"Name",
+		"Status",
+		"Description",
 	)
 	fmt.Fprintln(stdout, strings.Repeat("-", 80))
 	for _, f := range result.List {

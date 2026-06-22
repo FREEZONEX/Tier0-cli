@@ -14,18 +14,18 @@ import (
 )
 
 const (
-	setupCodeChars  = "ABCDEFGHJKMNPQRSTUVWXYZ23456789" // 排除易混淆字符
+	setupCodeChars  = "ABCDEFGHJKMNPQRSTUVWXYZ23456789" // Excludes visually ambiguous characters.
 	setupCodeLength = 8
 	pollInterval    = 5 * time.Second
-	maxPollCount    = 120 // 10 分钟
+	maxPollCount    = 120 // 10 minutes.
 )
 
-// SetupResult CLI 绑定结果
+// SetupResult is the CLI binding result.
 type SetupResult struct {
 	APIKey string
 }
 
-// GenerateSetupCode 生成随机绑定码
+// GenerateSetupCode generates a random binding code.
 func GenerateSetupCode() string {
 	b := make([]byte, setupCodeLength)
 	for i := range b {
@@ -34,17 +34,17 @@ func GenerateSetupCode() string {
 	return string(b)
 }
 
-// BuildConsoleURL 构造控制台授权页面 URL
+// BuildConsoleURL builds the console authorization URL.
 func BuildConsoleURL(baseURL, setupCode string) string {
 	consoleURL := strings.TrimRight(baseURL, "/")
-	// 如果 baseURL 包含 /api/ 路径，去掉它
+	// Strip the /api/ path when baseURL includes it.
 	if idx := strings.LastIndex(consoleURL, "/api/"); idx > 0 {
 		consoleURL = consoleURL[:idx]
 	}
 	return fmt.Sprintf("%s/cli-auth?setup=%s", consoleURL, setupCode)
 }
 
-// PollSetupCheck 轮询绑定状态
+// PollSetupCheck polls the binding status.
 func PollSetupCheck(ctx context.Context, baseURL, setupCode string, onPoll func(current, total int, done bool, err error)) (SetupResult, error) {
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 	url := strings.TrimRight(baseURL, "/") + "/api/core/cli-auth/status"

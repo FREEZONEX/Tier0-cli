@@ -6,19 +6,18 @@ import (
 	"strconv"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
-	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
 	"github.com/FREEZONEX/Tier0-cli/internal/notice"
 	"github.com/spf13/cobra"
 )
 
 var flowGetCmd = &cobra.Command{
 	Use:   "get",
-	Short: i18n.T("Get flow details", "获取 Flow 详情"),
+	Short: "Get flow details",
 	RunE:  runFlowGet,
 }
 
 func init() {
-	flowGetCmd.Flags().Int64("id", 0, i18n.T("Flow ID", "Flow ID"))
+	flowGetCmd.Flags().Int64("id", 0, "Flow ID")
 }
 
 func runFlowGet(cmd *cobra.Command, args []string) error {
@@ -32,10 +31,9 @@ func runFlowGet(cmd *cobra.Command, args []string) error {
 		id, _ = strconv.ParseInt(args[0], 10, 64)
 	}
 	if id == 0 {
-		return fmt.Errorf(i18n.T(
+		return fmt.Errorf(
 			"specify a Flow ID via --id <id> or as a positional argument",
-			"请通过 --id <id> 或直接传入 ID 指定 Flow",
-		))
+		)
 	}
 
 	body, _ := json.Marshal(map[string]int64{"id": id})
@@ -66,19 +64,19 @@ func runFlowGet(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(stdout, resp)
 		return nil
 	}
-	fav := i18n.T("no", "否")
+	fav := "no"
 	if f.IsFavorite == 1 {
-		fav = i18n.T("yes", "是")
+		fav = "yes"
 	}
-	fmt.Fprintf(stdout, "%-16s %d\n", i18n.T("ID:", "ID:"), f.Id)
-	fmt.Fprintf(stdout, "%-16s %s\n", i18n.T("FlowId:", "FlowId:"), f.FlowId)
-	fmt.Fprintf(stdout, "%-16s %s\n", i18n.T("Name:", "名称:"), f.FlowName)
-	fmt.Fprintf(stdout, "%-16s %s\n", i18n.T("Type:", "类型:"), f.FlowType)
-	fmt.Fprintf(stdout, "%-16s %s\n", i18n.T("Status:", "状态:"), f.FlowStatus)
-	fmt.Fprintf(stdout, "%-16s %s\n", i18n.T("Description:", "说明:"), f.Description)
-	fmt.Fprintf(stdout, "%-16s %s\n", i18n.T("Favorite:", "收藏:"), fav)
+	fmt.Fprintf(stdout, "%-16s %d\n", "ID:", f.Id)
+	fmt.Fprintf(stdout, "%-16s %s\n", "FlowId:", f.FlowId)
+	fmt.Fprintf(stdout, "%-16s %s\n", "Name:", f.FlowName)
+	fmt.Fprintf(stdout, "%-16s %s\n", "Type:", f.FlowType)
+	fmt.Fprintf(stdout, "%-16s %s\n", "Status:", f.FlowStatus)
+	fmt.Fprintf(stdout, "%-16s %s\n", "Description:", f.Description)
+	fmt.Fprintf(stdout, "%-16s %s\n", "Favorite:", fav)
 	fmt.Fprintf(stdout, "%-16s %s (%s)\n",
-		i18n.T("Version:", "当前版本:"), f.CurrentVersionName, f.CurrentVersionType)
+		"Version:", f.CurrentVersionName, f.CurrentVersionType)
 	checker.Emit("", false, stdout, cmd.ErrOrStderr())
 	return nil
 }

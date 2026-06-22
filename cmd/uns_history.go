@@ -7,38 +7,35 @@ import (
 	"time"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
-	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
 	"github.com/FREEZONEX/Tier0-cli/internal/notice"
 	"github.com/spf13/cobra"
 )
 
 var unsHistoryCmd = &cobra.Command{
 	Use:   "history",
-	Short: i18n.T("Query historical data for topics", "查询点位历史数据"),
-	Long: i18n.T(
-		"Query historical data for one or more UNS topics.\n\nTime formats accepted:\n  Relative: -1h  -30m  -7d  -1w\n  Absolute: 2026-01-01T00:00:00Z  (ISO 8601)\n  Keyword:  now\n\nExamples:\n  tier0 uns history -t demo --start -1h\n  tier0 uns history -t demo --start -24h --end now --fn avg --interval 1h\n  tier0 uns history -t demo --start 2026-01-01T00:00:00Z --end 2026-01-02T00:00:00Z",
-		"查询一个或多个 UNS 点位的历史数据。\n\n时间格式：\n  相对时间: -1h  -30m  -7d  -1w\n  绝对时间: 2026-01-01T00:00:00Z (ISO 8601)\n  关键字:   now\n\n示例:\n  tier0 uns history -t demo --start -1h\n  tier0 uns history -t demo --start -24h --end now --fn avg --interval 1h\n  tier0 uns history -t demo --start 2026-01-01T00:00:00Z --end 2026-01-02T00:00:00Z",
-	),
+	Short: "Query historical data for topics",
+	Long:  "Query historical data for one or more UNS topics.\n\nTime formats accepted:\n  Relative: -1h  -30m  -7d  -1w\n  Absolute: 2026-01-01T00:00:00Z  (ISO 8601)\n  Keyword:  now\n\nExamples:\n  tier0 uns history -t demo --start -1h\n  tier0 uns history -t demo --start -24h --end now --fn avg --interval 1h\n  tier0 uns history -t demo --start 2026-01-01T00:00:00Z --end 2026-01-02T00:00:00Z",
+
 	RunE: runUnsHistory,
 }
 
 func init() {
 	unsHistoryCmd.Flags().StringSliceP("topic", "t", nil,
-		i18n.T("Topic name(s) (repeatable, required)", "点位名称（可重复指定，必填）"))
+		"Topic name(s) (repeatable, required)")
 	unsHistoryCmd.Flags().String("start", "",
-		i18n.T("Start time: relative (-1h/-30m/-7d), ISO 8601, or 'now' (required)", "起始时间：相对(-1h/-30m/-7d)、ISO 8601 或 now（必填）"))
+		"Start time: relative (-1h/-30m/-7d), ISO 8601, or 'now' (required)")
 	unsHistoryCmd.Flags().String("end", "now",
-		i18n.T("End time: relative, ISO 8601, or 'now' (default: now)", "结束时间：相对、ISO 8601 或 now（默认: now）"))
+		"End time: relative, ISO 8601, or 'now' (default: now)")
 	unsHistoryCmd.Flags().Int("page", 1,
-		i18n.T("Page number", "页码"))
+		"Page number")
 	unsHistoryCmd.Flags().IntP("size", "l", 100,
-		i18n.T("Page size (max data points)", "每页大小"))
+		"Page size (max data points)")
 	unsHistoryCmd.Flags().String("interval", "",
-		i18n.T("Aggregation interval (e.g. 1m, 1h, 1d)", "聚合间隔（如 1m、1h、1d）"))
+		"Aggregation interval (e.g. 1m, 1h, 1d)")
 	unsHistoryCmd.Flags().String("fn", "",
-		i18n.T("Aggregation function (avg/max/min/sum/count)", "聚合函数（avg/max/min/sum/count）"))
+		"Aggregation function (avg/max/min/sum/count)")
 	unsHistoryCmd.Flags().String("field", "",
-		i18n.T("Aggregation field name", "聚合字段名"))
+		"Aggregation field name")
 	unsHistoryCmd.MarkFlagRequired("topic")
 	unsHistoryCmd.MarkFlagRequired("start")
 }
@@ -62,10 +59,9 @@ func parseTimeToISO(expr string) (string, error) {
 			numStr := expr[1 : len(expr)-1]
 			n, err := strconv.ParseInt(numStr, 10, 64)
 			if err != nil {
-				return "", fmt.Errorf(i18n.T(
+				return "", fmt.Errorf(
 					"invalid relative time %q (e.g. -1h, -30m, -7d, -1w)",
-					"相对时间格式错误 %q（示例: -1h、-30m、-7d、-1w）",
-				), expr)
+					expr)
 			}
 			var dur time.Duration
 			switch unitChar {
@@ -94,10 +90,9 @@ func parseTimeToISO(expr string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf(i18n.T(
+	return "", fmt.Errorf(
 		"unrecognized time expression %q — use relative (-1h/-30m/-7d), ISO 8601, or 'now'",
-		"无法识别的时间格式 %q — 请使用相对时间(-1h/-30m/-7d)、ISO 8601 或 now",
-	), expr)
+		expr)
 }
 
 func runUnsHistory(cmd *cobra.Command, args []string) error {

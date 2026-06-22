@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-
-	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
 )
 
 // ── path utilities ────────────────────────────────────────────────────────────
@@ -66,10 +64,9 @@ var typeFolders = map[string]string{
 func resolveNodeType(nodeTypeFlag string, errOut io.Writer) (apiType string, err error) {
 	warn := func(old, new string) {
 		if errOut != nil {
-			fmt.Fprintln(errOut, i18n.T(
+			fmt.Fprintln(errOut,
 				"warning: --type "+old+" is deprecated, use --type "+new,
-				"警告: --type "+old+" 已废弃，请改用 --type "+new,
-			))
+			)
 		}
 	}
 
@@ -94,15 +91,13 @@ func resolveNodeType(nodeTypeFlag string, errOut io.Writer) (apiType string, err
 		return "PATH", nil
 
 	case "":
-		return "", fmt.Errorf(i18n.T(
+		return "", fmt.Errorf(
 			"--type is required: use 'path' for folders or 'topic' for data points",
-			"--type 为必填：文件夹用 path，数据点用 topic",
-		))
+		)
 	default:
-		return "", fmt.Errorf(i18n.T(
+		return "", fmt.Errorf(
 			"--type %q is not valid: use 'path' for folders or 'topic' for data points",
-			"--type %q 无效：文件夹用 path，数据点用 topic",
-		), nodeTypeFlag)
+			nodeTypeFlag)
 	}
 }
 
@@ -127,27 +122,24 @@ func resolveNodeType(nodeTypeFlag string, errOut io.Writer) (apiType string, err
 func deriveTopicType(fullPath string) (topicType string, err error) {
 	segments := strings.Split(normalizeUNSPath(fullPath), "/")
 	if len(segments) < 2 {
-		return "", fmt.Errorf(i18n.T(
+		return "", fmt.Errorf(
 			"path %q: a topic node needs at least two segments — "+
 				"a type folder (Metric/Action/State) immediately before the leaf name.\n"+
 				"  Example: .../Metric/%s",
-			"路径 %q：topic 节点至少需要两段——类型目录（Metric/Action/State）+ 叶子名称。\n"+
-				"  示例：.../Metric/%s",
-		), fullPath, segments[len(segments)-1])
+
+			fullPath, segments[len(segments)-1])
 	}
 
 	parent := strings.ToLower(segments[len(segments)-2])
 	if _, ok := typeFolders[parent]; !ok {
 		suggested := strings.Join(segments[:len(segments)-1], "/") +
 			"/Metric/" + segments[len(segments)-1]
-		return "", fmt.Errorf(i18n.T(
+		return "", fmt.Errorf(
 			"path %q: segment before leaf must be a type folder (Metric/Action/State), got %q.\n"+
 				"  Type folders are never inserted automatically — include one in your path.\n"+
 				"  Example: %s",
-			"路径 %q：叶子名前一段必须是类型目录（Metric/Action/State），当前为 %q。\n"+
-				"  类型目录不会自动插入，请在路径中包含它。\n"+
-				"  示例：%s",
-		), fullPath, segments[len(segments)-2], suggested)
+
+			fullPath, segments[len(segments)-2], suggested)
 	}
 
 	return strings.ToUpper(parent), nil // e.g. "METRIC", "ACTION", "STATE"
@@ -176,7 +168,7 @@ func buildLeafNode(name, apiType, topicType, displayName, description, alias, fi
 	if fieldsJSON != "" {
 		var fields []any
 		if err := json.Unmarshal([]byte(fieldsJSON), &fields); err != nil {
-			return nil, fmt.Errorf(i18n.T("--fields JSON is invalid: %w", "--fields JSON 无效: %w"), err)
+			return nil, fmt.Errorf("--fields JSON is invalid: %w", err)
 		}
 		node["fields"] = fields
 	}
@@ -198,12 +190,12 @@ func buildLeafNode(name, apiType, topicType, displayName, description, alias, fi
 func wrapInFolderTree(fullPath string, leaf map[string]any) ([]any, error) {
 	path := normalizeUNSPath(fullPath)
 	if path == "" {
-		return nil, fmt.Errorf(i18n.T("topic path is empty", "topic 路径为空"))
+		return nil, fmt.Errorf("topic path is empty")
 	}
 	segments := strings.Split(path, "/")
 	for _, seg := range segments {
 		if seg == "" {
-			return nil, fmt.Errorf(i18n.T("topic path contains an empty segment", "topic 路径包含空段"))
+			return nil, fmt.Errorf("topic path contains an empty segment")
 		}
 	}
 	// Authoritative: leaf name is always the last path segment.
@@ -243,7 +235,7 @@ func buildNamespaceFromFlags(
 
 	fullPath = normalizeUNSPath(joinUNSPath(parent, topic))
 	if fullPath == "" {
-		return nil, "", fmt.Errorf(i18n.T("--topic is required", "--topic 为必填"))
+		return nil, "", fmt.Errorf("--topic is required")
 	}
 
 	apiType, err := resolveNodeType(nodeTypeFlag, errOut)

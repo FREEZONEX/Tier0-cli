@@ -157,7 +157,7 @@ func TestBuildNamespaceFromFlags_MetricPath(t *testing.T) {
 func TestBuildNamespaceFromFlags_WithParent(t *testing.T) {
 	_, fullPath, err := buildNamespaceFromFlags(
 		"Factory1/Assembly/Line1/Station1", "Metric/ProductionCount",
-		"topic", "", "当前产量", "", "",
+		"topic", "", "Current output", "", "",
 		`[{"name":"value","type":"int"}]`,
 		nil,
 	)

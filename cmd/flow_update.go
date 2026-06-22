@@ -7,31 +7,30 @@ import (
 	"strconv"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
-	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
 	"github.com/FREEZONEX/Tier0-cli/internal/notice"
 	"github.com/spf13/cobra"
 )
 
 var flowUpdateCmd = &cobra.Command{
 	Use:   "update",
-	Short: i18n.T("Update flow metadata", "更新 Flow 元数据"),
+	Short: "Update flow metadata",
 	RunE:  runFlowUpdate,
 }
 
 func init() {
-	flowUpdateCmd.Flags().Int64("id", 0, i18n.T("Flow ID (required)", "Flow ID（必填）"))
+	flowUpdateCmd.Flags().Int64("id", 0, "Flow ID (required)")
 	flowUpdateCmd.Flags().StringP("name", "n", "",
-		i18n.T("New name", "新名称"))
+		"New name")
 	flowUpdateCmd.Flags().String("desc", "",
-		i18n.T("New description", "新描述"))
+		"New description")
 	flowUpdateCmd.Flags().String("template", "",
-		i18n.T("New template JSON string", "更新模板 JSON 字符串"))
+		"New template JSON string")
 	flowUpdateCmd.Flags().String("template-file", "",
-		i18n.T("Read new template from file", "从文件读取模板 JSON"))
+		"Read new template from file")
 	flowUpdateCmd.Flags().Bool("favorite", false,
-		i18n.T("Mark as favorite", "标记为收藏"))
+		"Mark as favorite")
 	flowUpdateCmd.Flags().Bool("unfavorite", false,
-		i18n.T("Remove from favorites", "取消收藏"))
+		"Remove from favorites")
 }
 
 func runFlowUpdate(cmd *cobra.Command, args []string) error {
@@ -50,16 +49,15 @@ func runFlowUpdate(cmd *cobra.Command, args []string) error {
 		id, _ = strconv.ParseInt(args[0], 10, 64)
 	}
 	if id == 0 {
-		return fmt.Errorf(i18n.T(
+		return fmt.Errorf(
 			"specify a Flow ID via --id <id> or as a positional argument",
-			"请通过 --id <id> 或直接传入 ID 指定 Flow",
-		))
+		)
 	}
 
 	if templateFile != "" {
 		raw, err := os.ReadFile(templateFile)
 		if err != nil {
-			return fmt.Errorf(i18n.T("failed to read template file: %w", "读取模板文件失败: %w"), err)
+			return fmt.Errorf("failed to read template file: %w", err)
 		}
 		template = string(raw)
 	}
@@ -100,7 +98,7 @@ func runFlowUpdate(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 	_ = resp
-	fmt.Fprintf(stdout, i18n.T("✓ Flow %d updated\n", "✓ Flow %d 更新成功\n"), id)
+	fmt.Fprintf(stdout, "✓ Flow %d updated\n", id)
 	checker.Emit("", false, stdout, cmd.ErrOrStderr())
 	return nil
 }

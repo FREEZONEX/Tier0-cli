@@ -15,7 +15,6 @@ import (
 	"github.com/FREEZONEX/Tier0-cli/internal/config"
 	"github.com/FREEZONEX/Tier0-cli/internal/errs"
 	"github.com/FREEZONEX/Tier0-cli/internal/highrisk"
-	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
 )
 
 // DoAPI loads the profile, creates a client, and calls the API.
@@ -23,12 +22,12 @@ func DoAPI(ctx context.Context, endpoint, method, body string, debug bool) (stri
 	profile, err := config.LoadProfile()
 	if err != nil {
 		return "", errs.New(errs.CategoryConfig, 0,
-			i18n.T("failed to load config: ", "加载配置失败: ")+err.Error()).
+			"failed to load config: "+err.Error()).
 			WithHint("Run tier0 config to set up the CLI.", "tier0 config")
 	}
 	if profile.APIKey == "" {
 		return "", errs.New(errs.CategoryAuthentication, 401,
-			i18n.T("API Key not configured.", "未配置 API Key。")).
+			"API Key not configured.").
 			WithHint("Authenticate first.", "tier0 login")
 	}
 	c := client.New(profile.BaseURL, profile.APIKey)
@@ -105,10 +104,10 @@ func HandleCommandError(stderr io.Writer, err error, jsonMode bool) error {
 		} else {
 			fmt.Fprintf(stderr, "\n✗ %s\n", ae.Message)
 			if ae.Hint != "" {
-				fmt.Fprintf(stderr, i18n.T("  → %s\n", "  → %s\n"), ae.Hint)
+				fmt.Fprintf(stderr, "  → %s\n", ae.Hint)
 			}
 			if ae.HintCommand != "" {
-				fmt.Fprintf(stderr, i18n.T("  Run: %s\n", "  执行: %s\n"), ae.HintCommand)
+				fmt.Fprintf(stderr, "  Run: %s\n", ae.HintCommand)
 			}
 		}
 
@@ -130,7 +129,7 @@ func printPlain(w io.Writer, msg, hint, hintCmd string) {
 		fmt.Fprintf(w, "  → %s\n", hint)
 	}
 	if hintCmd != "" {
-		fmt.Fprintf(w, i18n.T("  Run: %s\n", "  执行: %s\n"), hintCmd)
+		fmt.Fprintf(w, "  Run: %s\n", hintCmd)
 	}
 }
 

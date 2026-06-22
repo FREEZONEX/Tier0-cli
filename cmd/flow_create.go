@@ -6,32 +6,31 @@ import (
 	"os"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
-	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
 	"github.com/FREEZONEX/Tier0-cli/internal/notice"
 	"github.com/spf13/cobra"
 )
 
 var flowCreateCmd = &cobra.Command{
 	Use:   "create",
-	Short: i18n.T("Create a new flow", "创建新 Flow"),
+	Short: "Create a new flow",
 	RunE:  runFlowCreate,
 }
 
 func init() {
 	flowCreateCmd.Flags().StringP("name", "n", "",
-		i18n.T("Flow name (required)", "Flow 名称（必填）"))
+		"Flow name (required)")
 	flowCreateCmd.Flags().StringP("type", "t", "",
-		i18n.T("Flow type: SourceFlow | EventFlow (required)", "Flow 类型（必填）"))
+		"Flow type: SourceFlow | EventFlow (required)")
 	flowCreateCmd.Flags().Bool("source", false,
-		i18n.T("Set type to SourceFlow", "类型设为 SourceFlow"))
+		"Set type to SourceFlow")
 	flowCreateCmd.Flags().Bool("event", false,
-		i18n.T("Set type to EventFlow", "类型设为 EventFlow"))
+		"Set type to EventFlow")
 	flowCreateCmd.Flags().String("desc", "",
-		i18n.T("Description", "描述"))
+		"Description")
 	flowCreateCmd.Flags().String("template", "",
-		i18n.T("Initial template JSON string", "初始模板 JSON 字符串"))
+		"Initial template JSON string")
 	flowCreateCmd.Flags().String("template-file", "",
-		i18n.T("Read initial template from file", "从文件读取初始模板 JSON"))
+		"Read initial template from file")
 }
 
 func runFlowCreate(cmd *cobra.Command, args []string) error {
@@ -54,22 +53,20 @@ func runFlowCreate(cmd *cobra.Command, args []string) error {
 	if templateFile != "" {
 		raw, err := os.ReadFile(templateFile)
 		if err != nil {
-			return fmt.Errorf(i18n.T("failed to read template file: %w", "读取模板文件失败: %w"), err)
+			return fmt.Errorf("failed to read template file: %w", err)
 		}
 		template = string(raw)
 	}
 
 	if flowName == "" {
-		return fmt.Errorf(i18n.T(
+		return fmt.Errorf(
 			"flow name is required (--name)",
-			"请通过 --name 指定 Flow 名称",
-		))
+		)
 	}
 	if flowType == "" {
-		return fmt.Errorf(i18n.T(
+		return fmt.Errorf(
 			"flow type is required: use --type SourceFlow|EventFlow, or --source / --event",
-			"请通过 --type SourceFlow|EventFlow（或 --source / --event）指定 Flow 类型",
-		))
+		)
 	}
 
 	payload := map[string]string{
@@ -102,7 +99,7 @@ func runFlowCreate(cmd *cobra.Command, args []string) error {
 		checker.Emit("", false, stdout, cmd.ErrOrStderr())
 		return nil
 	}
-	fmt.Fprintf(stdout, i18n.T("✓ Flow created, ID: %d\n", "✓ Flow 创建成功，ID: %d\n"), result.Id)
+	fmt.Fprintf(stdout, "✓ Flow created, ID: %d\n", result.Id)
 	checker.Emit("", false, stdout, cmd.ErrOrStderr())
 	return nil
 }

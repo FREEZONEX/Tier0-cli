@@ -2,36 +2,33 @@ package cmd
 
 import (
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
-	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
 	"github.com/FREEZONEX/Tier0-cli/internal/notice"
 	"github.com/spf13/cobra"
 )
 
 var unsSearchCmd = &cobra.Command{
 	Use:   "search",
-	Short: i18n.T("Search UNS topics", "搜索 UNS 点位"),
-	Long: i18n.T(
-		"Search topics in the UNS by keyword, tag, or path prefix.\n\nExamples:\n  tier0 uns search --keyword temp\n  tier0 uns search --path-prefix /devices --size 50\n  tier0 uns search --keyword temp --include-metadata",
-		"按关键字、标签或路径前缀搜索 UNS 中的点位。\n\n示例:\n  tier0 uns search --keyword temp\n  tier0 uns search --path-prefix /devices --size 50\n  tier0 uns search --keyword temp --include-metadata",
-	),
+	Short: "Search UNS topics",
+	Long:  "Search topics in the UNS by keyword, tag, or path prefix.\n\nExamples:\n  tier0 uns search --keyword temp\n  tier0 uns search --path-prefix /devices --size 50\n  tier0 uns search --keyword temp --include-metadata",
+
 	RunE: runUnsSearch,
 }
 
 func init() {
 	unsSearchCmd.Flags().StringP("keyword", "k", "",
-		i18n.T("Search by name keyword", "按名称关键字搜索"))
+		"Search by name keyword")
 	unsSearchCmd.Flags().String("path-prefix", "/",
-		i18n.T("Filter by path prefix", "按路径前缀过滤"))
+		"Filter by path prefix")
 	unsSearchCmd.Flags().String("topic-type", "",
-		i18n.T("Filter by topic type", "按点位类型过滤"))
+		"Filter by topic type")
 	unsSearchCmd.Flags().Int("page", 1,
-		i18n.T("Page number", "页码"))
+		"Page number")
 	unsSearchCmd.Flags().IntP("size", "l", 20,
-		i18n.T("Page size (max results)", "每页大小（最大结果数）"))
+		"Page size (max results)")
 	unsSearchCmd.Flags().Bool("include-metadata", false,
-		i18n.T("Include node metadata", "包含节点元数据"))
+		"Include node metadata")
 	unsSearchCmd.Flags().Bool("include-leaf-value", false,
-		i18n.T("Include leaf node values", "包含叶子节点值"))
+		"Include leaf node values")
 }
 
 func runUnsSearch(cmd *cobra.Command, args []string) error {

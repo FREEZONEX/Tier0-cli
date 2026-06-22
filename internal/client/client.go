@@ -16,14 +16,14 @@ import (
 	"github.com/FREEZONEX/Tier0-cli/internal/errs"
 )
 
-// Client HTTP API 客户端
+// Client is an HTTP API client.
 type Client struct {
 	baseURL string
 	apiKey  string
 	client  *http.Client
 }
 
-// New 创建 API 客户端
+// New creates an API client.
 func New(baseURL, apiKey string) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
@@ -32,7 +32,7 @@ func New(baseURL, apiKey string) *Client {
 	}
 }
 
-// DoAPI 调用 API 接口
+// DoAPI calls an API endpoint.
 func (c *Client) DoAPI(ctx context.Context, endpoint, method, body string, debug bool) (string, error) {
 	if method == "" {
 		method = http.MethodPost
@@ -104,33 +104,32 @@ func (c *Client) DoAPI(ctx context.Context, endpoint, method, body string, debug
 	return string(respBody), nil
 }
 
-// fixJSON 尝试修复 PowerShell 等环境导致的 JSON 引号丢失
-// 例如 {path:/} → {"path":"/"}
+// fixJSON attempts to repair JSON with missing quotes, which commonly happens
+// in shells such as PowerShell. For example, {path:/} becomes {"path":"/"}.
 func fixJSON(body string) string {
 	trimmed := strings.TrimSpace(body)
 	if trimmed == "" {
 		return body
 	}
-	// 已经是合法 JSON，无需修复
+	// Already valid JSON; no repair needed.
 	if json.Valid([]byte(trimmed)) {
 		return trimmed
 	}
 
-	// 修复 Object: 给无引号的 key 和 string value 加上引号
-	// 步骤 1: 给 key 加引号  {key: → {"key":
+	// Repair objects by quoting unquoted keys and string values.
+	// Step 1: quote keys, for example {key: becomes {"key":
 	keyRe := regexp.MustCompile(`([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:`)
 	fixed := keyRe.ReplaceAllString(trimmed, `$1"$2":`)
 
-	// 步骤 2: 给无引号的 string value 加引号（排除数字、布尔、null）
-	// 匹配 :value 或 ,value 后面跟 } 或 , 的情况
+	// Step 2: quote unquoted string values, excluding numbers, booleans, and null.
 	valRe := regexp.MustCompile(`(:\s*)([^"{}\[\],\s\d][^,}\]]*)([,}\]])`)
 	fixed = valRe.ReplaceAllString(fixed, `$1"$2"$3`)
 
-	// 步骤 3: 处理数组中的无引号 string
+	// Step 3: handle unquoted strings in arrays.
 	arrValRe := regexp.MustCompile(`([,\[]\s*)([^"{}\[\],\s\d][^,\]]*)([,\]])`)
 	fixed = arrValRe.ReplaceAllString(fixed, `$1"$2"$3`)
 
-	// 兜底：如果修复后仍不合法，返回原始值（让后端报错提示）
+	// Fallback: return the original value if the repaired result is still invalid.
 	if json.Valid([]byte(fixed)) {
 		return fixed
 	}

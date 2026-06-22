@@ -6,9 +6,10 @@
 // surface it to users and await explicit approval before retrying with --yes.
 //
 // Protocol (mirrors lark-cli convention):
-//   exit code 10  →  stderr contains {"ok":false,"error":{"type":"confirmation_required",...}}
-//   agent MUST show risk.action + key params to the user, wait for approval,
-//   then re-run the original command appending --yes.
+//
+//	exit code 10  →  stderr contains {"ok":false,"error":{"type":"confirmation_required",...}}
+//	agent MUST show risk.action + key params to the user, wait for approval,
+//	then re-run the original command appending --yes.
 package highrisk
 
 import (

@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Tier0 CLI 一键安装脚本
-# 用法: curl -sL https://raw.githubusercontent.com/FREEZONEX/Tier0-cli/main/install.sh | bash
+# Tier0 CLI one-command installer.
+# Usage: curl -sL https://raw.githubusercontent.com/FREEZONEX/Tier0-cli/main/install.sh | bash
 
 REPO="FREEZONEX/Tier0-cli"
 
-# 默认安装到用户目录，无需 sudo
+# Install into the user directory by default; sudo is not required.
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.tier0/bin}"
 
-# 检测平台
+# Detect platform.
 detect_platform() {
   local os arch
   os="$(uname -s)"
@@ -39,14 +39,14 @@ detect_platform() {
 
 PLATFORM="$(detect_platform)"
 
-# 获取最新版本
+# Fetch latest version.
 LATEST_URL="https://api.github.com/repos/$REPO/releases/latest"
 VERSION="$(curl -sL "$LATEST_URL" | grep -o '"tag_name": "[^"]*' | cut -d'"' -f4)"
 if [ -z "$VERSION" ]; then
   VERSION="v0.2.7"
 fi
 
-# 下载
+# Download.
 PKG_NAME="tier0-cli-${VERSION}-${PLATFORM}.tar.gz"
 DOWNLOAD_URL="https://github.com/$REPO/releases/download/$VERSION/$PKG_NAME"
 TMP_DIR="$(mktemp -d)"
@@ -54,10 +54,10 @@ trap "rm -rf $TMP_DIR" EXIT
 
 curl -sL "$DOWNLOAD_URL" -o "$TMP_DIR/$PKG_NAME"
 
-# 解压
+# Extract.
 tar -xzf "$TMP_DIR/$PKG_NAME" -C "$TMP_DIR"
 
-# 查找二进制
+# Find binary.
 BINARY=""
 for f in tier0 tier0.exe; do
   if [ -f "$TMP_DIR/$f" ]; then
@@ -76,14 +76,14 @@ if [ -z "$BINARY" ]; then
   exit 1
 fi
 
-# 安装到用户目录
+# Install into the user directory.
 mkdir -p "$INSTALL_DIR"
 cp "$BINARY" "$INSTALL_DIR/tier0"
 chmod +x "$INSTALL_DIR/tier0"
 
-# PATH 配置
+# PATH configuration.
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
-  # 检测当前 shell
+  # Detect current shell.
   CURRENT_SHELL="${SHELL##*/}"
   SHELL_RC=""
   case "$CURRENT_SHELL" in
@@ -92,14 +92,14 @@ if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
     *)    SHELL_RC="$HOME/.profile" ;;
   esac
 
-  # 追加到 shell 配置文件
+  # Append to shell profile.
   if [ -f "$SHELL_RC" ]; then
     if ! grep -q "export PATH=.*$INSTALL_DIR" "$SHELL_RC" 2>/dev/null; then
       echo "export PATH=\"$INSTALL_DIR:\$PATH\"" >> "$SHELL_RC"
     fi
   fi
 
-  # 立即在当前 shell 生效
+  # Make it available in the current shell.
   export PATH="$INSTALL_DIR:$PATH"
 fi
 

@@ -13,12 +13,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"strings"
-
-	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
 	"github.com/FREEZONEX/Tier0-cli/internal/upgrade"
 	"github.com/FREEZONEX/Tier0-cli/internal/version"
+	"io"
+	"strings"
 )
 
 // UpdateNotice is the structured update hint embedded in JSON output.
@@ -86,12 +84,9 @@ func (c *Checker) Emit(resp string, jsonMode bool, stdout, stderr io.Writer) {
 	// Plain mode: update hint goes to stderr only.
 	if hasUpdate {
 		fmt.Fprintf(stderr, "\n%s\n",
-			i18n.T(
-				fmt.Sprintf("💡 New version available: %s → %s  Run: tier0 upgrade",
-					result.CurrentVersion, result.LatestVersion),
-				fmt.Sprintf("💡 发现新版本: %s → %s  运行: tier0 upgrade",
-					result.CurrentVersion, result.LatestVersion),
-			),
+
+			fmt.Sprintf("💡 New version available: %s → %s  Run: tier0 upgrade",
+				result.CurrentVersion, result.LatestVersion),
 		)
 	}
 }
@@ -103,12 +98,8 @@ func buildNotice(result *upgrade.Result) *Notice {
 			CurrentVersion:  result.CurrentVersion,
 			LatestVersion:   result.LatestVersion,
 			Command:         "tier0 upgrade",
-			Message: i18n.T(
-				fmt.Sprintf("New version available: %s → %s  Run: tier0 upgrade",
-					result.CurrentVersion, result.LatestVersion),
-				fmt.Sprintf("发现新版本: %s → %s  运行: tier0 upgrade",
-					result.CurrentVersion, result.LatestVersion),
-			),
+			Message: fmt.Sprintf("New version available: %s → %s  Run: tier0 upgrade",
+				result.CurrentVersion, result.LatestVersion),
 		},
 	}
 }

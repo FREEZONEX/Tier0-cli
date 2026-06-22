@@ -30,20 +30,20 @@ func httpGetJSON(url string) (string, error) {
 	return string(body), nil
 }
 
-// SkillInfo 单个 skill 的信息
+// SkillInfo describes one installed skill.
 type SkillInfo struct {
 	Name        string `json:"name"`
 	Version     string `json:"version"`
 	Description string `json:"description,omitempty"`
 }
 
-// SkillsListResult 列出 skills 的结果
+// SkillsListResult is the list-skills result.
 type SkillsListResult struct {
 	Version string      `json:"version"`
 	Skills  []SkillInfo `json:"skills"`
 }
 
-// SkillsUpdateResult skills 更新的结果
+// SkillsUpdateResult is the skills update result.
 type SkillsUpdateResult struct {
 	CurrentVersion string `json:"currentVersion"`
 	LatestVersion  string `json:"latestVersion"`
@@ -52,16 +52,16 @@ type SkillsUpdateResult struct {
 	ErrorMessage   string `json:"error,omitempty"`
 }
 
-// FindSkillsDir 查找本地 skills 目录
+// FindSkillsDir locates the local skills directory.
 func FindSkillsDir(binaryPath string) string {
-	// 优先：二进制同目录下的 skill/
+	// Prefer skill/ beside the binary.
 	if binaryPath != "" {
 		dir := filepath.Join(filepath.Dir(binaryPath), "skill")
 		if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
 			return dir
 		}
 	}
-	// 备选：~/.tier0/skills/
+	// Fallback: ~/.tier0/skills/.
 	home, err := os.UserHomeDir()
 	if err == nil {
 		dir := filepath.Join(home, ".tier0", "skills")
@@ -72,7 +72,7 @@ func FindSkillsDir(binaryPath string) string {
 	return ""
 }
 
-// GetSkillsVersion 读取 skills 的版本信息
+// GetSkillsVersion reads skills version metadata.
 func GetSkillsVersion(skillsDir string) string {
 	if skillsDir == "" {
 		return "unknown"
@@ -115,7 +115,7 @@ func getSkillsVersionFromSubdirs(skillsDir string) string {
 	return "unknown"
 }
 
-// ListSkills 列出所有已安装的 skills
+// ListSkills lists all installed skills.
 func ListSkills(skillsDir string) (*SkillsListResult, error) {
 	if skillsDir == "" {
 		return &SkillsListResult{Version: "dev", Skills: nil}, nil
@@ -126,7 +126,7 @@ func ListSkills(skillsDir string) (*SkillsListResult, error) {
 		if os.IsNotExist(err) {
 			return &SkillsListResult{Version: "unknown", Skills: nil}, nil
 		}
-		return nil, fmt.Errorf("读取 skills 目录失败: %w", err)
+		return nil, fmt.Errorf("failed to read skills directory: %w", err)
 	}
 
 	var skills []SkillInfo
@@ -173,7 +173,7 @@ func ListSkills(skillsDir string) (*SkillsListResult, error) {
 	}, nil
 }
 
-// readSkillDescription 从 SKILL.md 的 frontmatter 中读取 description 字段
+// readSkillDescription reads the description field from SKILL.md frontmatter.
 func readSkillDescription(skillFile string) string {
 	data, err := os.ReadFile(skillFile)
 	if err != nil {
@@ -224,7 +224,7 @@ func skillRepoLatestCommit() (string, error) {
 	return c.SHA[:8], nil // short SHA, 8 chars
 }
 
-// CheckSkillsUpdate 检查 skills 是否有新版本（直接对比 Tier0-skill 仓库最新 commit）
+// CheckSkillsUpdate checks for newer skills by comparing the latest Tier0-skill commit.
 func CheckSkillsUpdate(skillsDir string) (*SkillsUpdateResult, error) {
 	currentVer := GetSkillsVersion(skillsDir)
 
@@ -248,14 +248,14 @@ func CheckSkillsUpdate(skillsDir string) (*SkillsUpdateResult, error) {
 // skillRepoArchiveURL is the GitHub archive URL for the Tier0-skill main branch.
 const skillRepoArchiveURL = "https://github.com/FREEZONEX/Tier0-skill/archive/refs/heads/main.zip"
 
-// UpdateSkills 更新 skills — 直接从 Tier0-skill 仓库拉取，与 CLI release 解耦。
+// UpdateSkills updates skills directly from the Tier0-skill repository, decoupled from CLI releases.
 func UpdateSkills(skillsDir string, dryRun bool) (*SkillsUpdateResult, error) {
 	if _, err := os.Stat(skillsDir); os.IsNotExist(err) {
 		if dryRun {
-			return &SkillsUpdateResult{CurrentVersion: "未安装"}, nil
+			return &SkillsUpdateResult{CurrentVersion: "not installed"}, nil
 		}
 		if err := os.MkdirAll(skillsDir, 0o755); err != nil {
-			return nil, fmt.Errorf("创建 skills 目录失败: %w", err)
+			return nil, fmt.Errorf("failed to create skills directory: %w", err)
 		}
 	}
 
@@ -274,7 +274,7 @@ func UpdateSkills(skillsDir string, dryRun bool) (*SkillsUpdateResult, error) {
 
 	tmpDir, err := os.MkdirTemp("", "tier0-skills-update-*")
 	if err != nil {
-		result.ErrorMessage = fmt.Sprintf("创建临时目录失败: %v", err)
+		result.ErrorMessage = fmt.Sprintf("failed to create temporary directory: %v", err)
 		return result, err
 	}
 	defer os.RemoveAll(tmpDir)
@@ -282,38 +282,38 @@ func UpdateSkills(skillsDir string, dryRun bool) (*SkillsUpdateResult, error) {
 	// Download the Tier0-skill repo archive directly.
 	archivePath := filepath.Join(tmpDir, "tier0-skill-main.zip")
 	if err := downloadFile(skillRepoArchiveURL, archivePath); err != nil {
-		result.ErrorMessage = fmt.Sprintf("下载 skill 仓库失败: %v", err)
+		result.ErrorMessage = fmt.Sprintf("failed to download skill repository: %v", err)
 		return result, err
 	}
 
 	extractDir := filepath.Join(tmpDir, "extracted")
 	if err := os.MkdirAll(extractDir, 0o755); err != nil {
-		result.ErrorMessage = fmt.Sprintf("创建解压目录失败: %v", err)
+		result.ErrorMessage = fmt.Sprintf("failed to create extraction directory: %v", err)
 		return result, err
 	}
 
 	if err := extractZip(archivePath, extractDir); err != nil {
-		result.ErrorMessage = fmt.Sprintf("解压 skill 仓库失败: %v", err)
+		result.ErrorMessage = fmt.Sprintf("failed to extract skill repository: %v", err)
 		return result, err
 	}
 
 	// GitHub archive extracts into "Tier0-skill-main/" — that root IS the skill dir.
 	srcSkillsDir := findSkillRepoRoot(extractDir)
 	if srcSkillsDir == "" {
-		result.ErrorMessage = "未在下载包中找到 skill 内容"
+		result.ErrorMessage = "skill content not found in downloaded package"
 		return result, fmt.Errorf("%s", result.ErrorMessage)
 	}
 
 	backupDir := filepath.Join(tmpDir, "backup")
 	if err := os.Rename(skillsDir, backupDir); err != nil && !os.IsNotExist(err) {
-		result.ErrorMessage = fmt.Sprintf("备份旧 skills 失败: %v", err)
+		result.ErrorMessage = fmt.Sprintf("failed to back up old skills: %v", err)
 		return result, err
 	}
 
 	if err := copyDir(srcSkillsDir, skillsDir); err != nil {
 		os.RemoveAll(skillsDir)
 		os.Rename(backupDir, skillsDir)
-		result.ErrorMessage = fmt.Sprintf("安装新 skills 失败（已回滚）: %v", err)
+		result.ErrorMessage = fmt.Sprintf("failed to install new skills; rolled back: %v", err)
 		return result, err
 	}
 
@@ -359,7 +359,7 @@ func findSkillRepoRoot(extractDir string) string {
 	return ""
 }
 
-// findSkillDir 在解压目录中查找 skill/ 目录
+// findSkillDir finds the skill directory in an extracted package.
 func findSkillDir(dir string) string {
 	skillDir := filepath.Join(dir, "skill")
 	if fi, err := os.Stat(skillDir); err == nil && fi.IsDir() {
@@ -381,7 +381,7 @@ func findSkillDir(dir string) string {
 	return found
 }
 
-// copyDir 递归复制目录
+// copyDir copies a directory recursively.
 func copyDir(src, dst string) error {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -421,7 +421,7 @@ func copyDir(src, dst string) error {
 	})
 }
 
-// GetDefaultSkillsDir 获取默认的 skills 目录路径（仅返回已存在的目录）
+// GetDefaultSkillsDir returns the default skills directory path when it exists.
 func GetDefaultSkillsDir() string {
 	binaryPath, err := os.Executable()
 	if err != nil {
@@ -452,7 +452,7 @@ func FallbackSkillsDir() string {
 	return filepath.Join(home, ".tier0", "skills")
 }
 
-// SkillsLastUpdated 获取 skills 的最后更新时间
+// SkillsLastUpdated returns the skills last-updated timestamp.
 func SkillsLastUpdated(skillsDir string) string {
 	if skillsDir == "" {
 		return ""

@@ -11,15 +11,15 @@ import (
 )
 
 const (
-	GitHubAPI      = "https://api.github.com"
-	RepoOwner      = "FREEZONEX"
-	RepoName       = "Tier0-cli"
-	NPMRegistry    = "https://registry.npmjs.org"
-	NPMMirror      = "https://registry.npmmirror.com"
-	NPMPackage     = "@tier0/cli"
+	GitHubAPI   = "https://api.github.com"
+	RepoOwner   = "FREEZONEX"
+	RepoName    = "Tier0-cli"
+	NPMRegistry = "https://registry.npmjs.org"
+	NPMMirror   = "https://registry.npmmirror.com"
+	NPMPackage  = "@tier0/cli"
 )
 
-// Release 表示 GitHub Release 信息
+// Release represents GitHub Release metadata.
 type Release struct {
 	TagName     string    `json:"tag_name"`
 	Name        string    `json:"name"`
@@ -28,19 +28,19 @@ type Release struct {
 	Assets      []Asset   `json:"assets"`
 }
 
-// Asset 表示 Release 中的资源文件
+// Asset represents a GitHub Release asset.
 type Asset struct {
 	Name               string `json:"name"`
 	BrowserDownloadURL string `json:"browser_download_url"`
 	Size               int64  `json:"size"`
 }
 
-// platformKey 返回当前平台的标识字符串，如 "linux-amd64"
+// platformKey returns the current platform key, such as "linux-amd64".
 func platformKey() string {
 	return runtime.GOOS + "-" + runtime.GOARCH
 }
 
-// platformReleaseName 返回 release 包中平台对应的友好名称
+// platformReleaseName returns the platform name used in release assets.
 func platformReleaseName() string {
 	switch platformKey() {
 	case "linux-amd64":
@@ -69,7 +69,7 @@ func fetchLatestVersionNPM() (string, error) {
 			return ver, nil
 		}
 	}
-	return "", fmt.Errorf("无法从 npm registry 或 npmmirror 获取版本信息")
+	return "", fmt.Errorf("failed to fetch version information from npm registry or npmmirror")
 }
 
 func fetchVersionFromRegistry(registry string) (string, error) {
@@ -123,8 +123,8 @@ func buildReleaseFromVersion(ver string) *Release {
 	}
 }
 
-// FetchLatestRelease 获取最新 Release。
-// 优先查询 npm registry（无限速），失败时回退到 GitHub API。
+// FetchLatestRelease fetches the latest release.
+// It prefers npm registry and falls back to the GitHub API.
 func FetchLatestRelease() (*Release, error) {
 	// Primary: npm registry — no rate limit
 	if ver, err := fetchLatestVersionNPM(); err == nil {
@@ -136,23 +136,23 @@ func FetchLatestRelease() (*Release, error) {
 	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {
-		return nil, fmt.Errorf("无法连接 GitHub API: %w", err)
+		return nil, fmt.Errorf("failed to connect to GitHub API: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub API 返回状态码 %d", resp.StatusCode)
+		return nil, fmt.Errorf("GitHub API returned status code %d", resp.StatusCode)
 	}
 
 	var release Release
 	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return nil, fmt.Errorf("解析 Release 信息失败: %w", err)
+		return nil, fmt.Errorf("failed to parse Release information: %w", err)
 	}
 	return &release, nil
 }
 
-// FetchRelease 获取指定版本的 Release。
-// 直接构造下载 URL，无需调用 GitHub API。
+// FetchRelease fetches a specific version.
+// It constructs the download URL directly without calling the GitHub API.
 func FetchRelease(ver string) (*Release, error) {
 	if !strings.HasPrefix(ver, "v") {
 		ver = "v" + ver
@@ -163,7 +163,7 @@ func FetchRelease(ver string) (*Release, error) {
 	// Verify the asset actually exists with a HEAD request (avoids downloading a 404).
 	asset := release.FindAsset()
 	if asset == nil {
-		return nil, fmt.Errorf("无法构建版本 %s 的下载地址", ver)
+		return nil, fmt.Errorf("failed to build download URL for version %s", ver)
 	}
 	client := &http.Client{Timeout: 10 * time.Second}
 	headResp, err := client.Head(asset.BrowserDownloadURL)
@@ -173,12 +173,12 @@ func FetchRelease(ver string) (*Release, error) {
 	}
 	defer headResp.Body.Close()
 	if headResp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("版本 %s 不存在（资源文件未找到）", ver)
+		return nil, fmt.Errorf("version %s does not exist; release asset was not found", ver)
 	}
 	return release, nil
 }
 
-// FindAsset 在 Release 中查找匹配当前平台的资源文件
+// FindAsset finds the release asset for the current platform.
 func (r *Release) FindAsset() *Asset {
 	platformName := platformReleaseName()
 	suffix := ".tar.gz"
@@ -193,7 +193,7 @@ func (r *Release) FindAsset() *Asset {
 		}
 	}
 
-	// 备选：按 GOOS-GOARCH 格式匹配
+	// Fallback: match the GOOS-GOARCH format.
 	fallbackSuffix := platformKey() + suffix
 	for i := range r.Assets {
 		if strings.Contains(r.Assets[i].Name, fallbackSuffix) {

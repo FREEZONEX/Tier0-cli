@@ -8,7 +8,6 @@ import (
 
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
 	"github.com/FREEZONEX/Tier0-cli/internal/highrisk"
-	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
 	"github.com/FREEZONEX/Tier0-cli/internal/notice"
 	"github.com/spf13/cobra"
 )
@@ -16,15 +15,15 @@ import (
 var flowDeleteCmd = &cobra.Command{
 	Use:     "delete",
 	Aliases: []string{"del", "rm"},
-	Short:   i18n.T("Delete flow(s)", "删除 Flow"),
+	Short:   "Delete flow(s)",
 	RunE:    runFlowDelete,
 }
 
 func init() {
 	flowDeleteCmd.Flags().Int64Slice("id", nil,
-		i18n.T("Flow ID(s) to delete (repeatable)", "要删除的 Flow ID（可重复指定多个）"))
+		"Flow ID(s) to delete (repeatable)")
 	flowDeleteCmd.Flags().BoolP("yes", "y", false,
-		i18n.T("Confirm high-risk operation (required)", "确认高风险操作（必填）"))
+		"Confirm high-risk operation (required)")
 }
 
 func runFlowDelete(cmd *cobra.Command, args []string) error {
@@ -49,16 +48,14 @@ func runFlowDelete(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(ids) == 0 {
-		return fmt.Errorf(i18n.T(
+		return fmt.Errorf(
 			"specify at least one Flow ID via --id <id> or as positional arguments (comma-separated)",
-			"请通过 --id <id> 或直接传入 ID（支持多个，逗号分隔）指定要删除的 Flow",
-		))
+		)
 	}
 
-	summary := i18n.T(
-		fmt.Sprintf("Delete Flow(s) %v — this will STOP the Node-RED container(s) and cannot be undone.", ids),
-		fmt.Sprintf("删除 Flow %v — 将停止对应的 Node-RED 容器，操作不可逆。", ids),
-	)
+	summary :=
+		fmt.Sprintf("Delete Flow(s) %v — this will STOP the Node-RED container(s) and cannot be undone.", ids)
+
 	if err := highrisk.Guard(confirmed, "flow delete", summary); err != nil {
 		return err
 	}
@@ -79,9 +76,9 @@ func runFlowDelete(cmd *cobra.Command, args []string) error {
 	}
 	_ = resp
 	if len(ids) == 1 {
-		fmt.Fprintf(stdout, i18n.T("✓ Flow %d deleted\n", "✓ Flow %d 已删除\n"), ids[0])
+		fmt.Fprintf(stdout, "✓ Flow %d deleted\n", ids[0])
 	} else {
-		fmt.Fprintf(stdout, i18n.T("✓ %d flows deleted\n", "✓ 已删除 %d 个 Flow\n"), len(ids))
+		fmt.Fprintf(stdout, "✓ %d flows deleted\n", len(ids))
 	}
 	checker.Emit("", false, stdout, cmd.ErrOrStderr())
 	return nil

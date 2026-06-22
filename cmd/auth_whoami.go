@@ -6,18 +6,15 @@ import (
 	"strings"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
-	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
 	"github.com/FREEZONEX/Tier0-cli/internal/notice"
 	"github.com/spf13/cobra"
 )
 
 var authWhoamiCmd = &cobra.Command{
 	Use:   "whoami",
-	Short: i18n.T("Show current API key identity", "查看当前 API Key 身份"),
-	Long: i18n.T(
-		"Show the user, workspace, key name, key type, roles, and permissions for the configured API key.",
-		"查看当前配置 API Key 对应的用户、Workspace、Key 名称、Key 类型、角色和权限。",
-	),
+	Short: "Show current API key identity",
+	Long:  "Show the user, workspace, key name, key type, roles, and permissions for the configured API key.",
+
 	RunE: runAuthWhoami,
 }
 
@@ -58,16 +55,16 @@ func runAuthWhoami(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	fmt.Fprintf(stdout, "%-16s %d\n", i18n.T("UserID:", "用户ID:"), result.UserID)
-	fmt.Fprintf(stdout, "%-16s %s\n", i18n.T("UserName:", "用户名:"), result.UserName)
-	fmt.Fprintf(stdout, "%-16s %s\n", i18n.T("Email:", "邮箱:"), result.Email)
-	fmt.Fprintf(stdout, "%-16s %d\n", i18n.T("WorkspaceID:", "工作区ID:"), result.WorkspaceID)
-	fmt.Fprintf(stdout, "%-16s %s\n", i18n.T("Workspace:", "工作区:"), result.WorkspaceName)
-	fmt.Fprintf(stdout, "%-16s %s\n", i18n.T("API Key:", "API Key:"), result.ApiKeyName)
-	fmt.Fprintf(stdout, "%-16s %s\n", i18n.T("KeyPrefix:", "Key 前缀:"), result.KeyPrefix)
-	fmt.Fprintf(stdout, "%-16s %s\n", i18n.T("KeyType:", "Key 类型:"), result.KeyType)
-	fmt.Fprintf(stdout, "%-16s %s\n", i18n.T("Roles:", "角色:"), joinOrDash(result.Roles))
-	fmt.Fprintf(stdout, "%-16s %s\n", i18n.T("Permissions:", "权限:"), joinOrDash(result.Permissions))
+	fmt.Fprintf(stdout, "%-16s %d\n", "UserID:", result.UserID)
+	fmt.Fprintf(stdout, "%-16s %s\n", "UserName:", result.UserName)
+	fmt.Fprintf(stdout, "%-16s %s\n", "Email:", result.Email)
+	fmt.Fprintf(stdout, "%-16s %d\n", "WorkspaceID:", result.WorkspaceID)
+	fmt.Fprintf(stdout, "%-16s %s\n", "Workspace:", result.WorkspaceName)
+	fmt.Fprintf(stdout, "%-16s %s\n", "API Key:", result.ApiKeyName)
+	fmt.Fprintf(stdout, "%-16s %s\n", "KeyPrefix:", result.KeyPrefix)
+	fmt.Fprintf(stdout, "%-16s %s\n", "KeyType:", result.KeyType)
+	fmt.Fprintf(stdout, "%-16s %s\n", "Roles:", joinOrDash(result.Roles))
+	fmt.Fprintf(stdout, "%-16s %s\n", "Permissions:", joinOrDash(result.Permissions))
 	checker.Emit("", false, stdout, cmd.ErrOrStderr())
 	return nil
 }

@@ -6,37 +6,28 @@ import (
 
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
 	"github.com/FREEZONEX/Tier0-cli/internal/config"
-	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
 	"github.com/spf13/cobra"
 )
 
 var configCmd = &cobra.Command{
 	Use:   "config",
-	Short: i18n.T("View or update configuration", "查看/管理配置"),
-	Long: i18n.T(
-		"View or update CLI configuration (base URL, API key, language). Without flags, displays the current settings.",
-		"查看或修改 CLI 配置（平台地址、API Key、语言）。不带参数时显示当前设置。",
-	),
-	Example: i18n.T(
-		`  tier0 config
+	Short: "View or update configuration",
+	Long:  "View or update CLI configuration (base URL and API key). Without flags, displays the current settings.",
+
+	Example: `  tier0 config
   tier0 config --base-url https://tier0.dev
-  tier0 config --api-key sk-per-xxxxxx
-  tier0 config --lang zh`,
-		`  tier0 config
-  tier0 config --base-url https://tier0.dev
-  tier0 config --api-key sk-per-xxxxxx
-  tier0 config --lang zh`,
-	),
+  tier0 config --api-key sk-per-xxxxxx`,
+
 	RunE: runConfig,
 }
 
 func init() {
 	configCmd.Flags().String("base-url", "",
-		i18n.T("Set the platform base URL", "设置平台地址"))
+		"Set the platform base URL")
 	configCmd.Flags().String("api-key", "",
-		i18n.T("Set the API key (alternative to tier0 login)", "设置 API Key（可替代 tier0 login）"))
+		"Set the API key (alternative to tier0 login)")
 	configCmd.Flags().String("lang", "",
-		i18n.T("Set UI language: en | zh", "设置界面语言: en | zh"))
+		"Deprecated compatibility flag; CLI output is English-only")
 }
 
 func runConfig(cmd *cobra.Command, args []string) error {
@@ -49,11 +40,10 @@ func runConfig(cmd *cobra.Command, args []string) error {
 	if setBaseURL != "" || setAPIKey != "" || setLang != "" {
 		if setLang != "" {
 			setLang = strings.ToLower(strings.TrimSpace(setLang))
-			if setLang != "en" && setLang != "zh" {
-				return fmt.Errorf(i18n.T(
-					"unsupported language %q, use: en | zh",
-					"不支持的语言 %q，可选: en | zh",
-				), setLang)
+			if setLang != "en" {
+				return fmt.Errorf(
+					"unsupported language %q; Tier0 CLI output is English-only",
+					setLang)
 			}
 		}
 
@@ -65,20 +55,19 @@ func runConfig(cmd *cobra.Command, args []string) error {
 			profile.APIKey = strings.TrimSpace(setAPIKey)
 		}
 		if setLang != "" {
-			profile.Lang = setLang
+			profile.Lang = "en"
 		}
 		if err := config.SaveProfile(profile); err != nil {
-			return fmt.Errorf(i18n.T("failed to save config: %w", "保存配置失败: %w"), err)
+			return fmt.Errorf("failed to save config: %w", err)
 		}
 		if setBaseURL != "" {
-			fmt.Fprintf(stdout, i18n.T("✓ BaseURL set to: %s\n", "✓ BaseURL 已设置为: %s\n"), strings.TrimRight(setBaseURL, "/"))
+			fmt.Fprintf(stdout, "✓ BaseURL set to: %s\n", strings.TrimRight(setBaseURL, "/"))
 		}
 		if setAPIKey != "" {
-			fmt.Fprintf(stdout, i18n.T("✓ API Key set (%s...)\n", "✓ API Key 已设置 (%s...)\n"), profile.APIKey[:min(8, len(profile.APIKey))])
+			fmt.Fprintf(stdout, "✓ API Key set (%s...)\n", profile.APIKey[:min(8, len(profile.APIKey))])
 		}
 		if setLang != "" {
-			i18n.SetLang(setLang)
-			fmt.Fprintf(stdout, i18n.T("✓ Language set to: %s\n", "✓ 语言已设置为: %s\n"), setLang)
+			fmt.Fprintln(stdout, "✓ Language set to: en")
 		}
 		return nil
 	}
@@ -86,24 +75,19 @@ func runConfig(cmd *cobra.Command, args []string) error {
 	// Read mode
 	profile, err := config.LoadProfile()
 	if err != nil {
-		return fmt.Errorf(i18n.T("failed to load config: %w", "加载配置失败: %w"), err)
+		return fmt.Errorf("failed to load config: %w", err)
 	}
 
 	baseURL := cmdutil.ResolveBaseURL("")
 	if profile.BaseURL != "" {
 		baseURL = profile.BaseURL
 	}
-	lang := profile.Lang
-	if lang == "" {
-		lang = "en"
-	}
-
-	fmt.Fprintf(stdout, i18n.T("BaseURL:  %s\n", "BaseURL:  %s\n"), baseURL)
-	fmt.Fprintf(stdout, i18n.T("Language: %s\n", "语言:     %s\n"), lang)
+	fmt.Fprintf(stdout, "BaseURL:  %s\n", baseURL)
+	fmt.Fprintln(stdout, "Language: en")
 	if profile.APIKey != "" {
-		fmt.Fprintf(stdout, i18n.T("API Key:  %s...\n", "API Key:  %s...\n"), profile.APIKey[:8])
+		fmt.Fprintf(stdout, "API Key:  %s...\n", profile.APIKey[:8])
 	} else {
-		fmt.Fprintln(stdout, i18n.T("API Key:  (not set)", "API Key:  (未设置)"))
+		fmt.Fprintln(stdout, "API Key:  (not set)")
 	}
 	_ = stderr
 	return nil

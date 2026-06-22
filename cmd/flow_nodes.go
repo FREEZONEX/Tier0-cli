@@ -7,28 +7,25 @@ import (
 	"strings"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
-	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
 	"github.com/FREEZONEX/Tier0-cli/internal/notice"
 	"github.com/spf13/cobra"
 )
 
 var flowNodesCmd = &cobra.Command{
 	Use:   "nodes [source|event]",
-	Short: i18n.T("List available Node-RED node types", "列出可用 Node-RED 节点类型"),
-	Long: i18n.T(
-		"List Node-RED node types available for a SourceFlow or EventFlow.",
-		"列出 SourceFlow 或 EventFlow 当前可用的 Node-RED 节点类型。",
-	),
+	Short: "List available Node-RED node types",
+	Long:  "List Node-RED node types available for a SourceFlow or EventFlow.",
+
 	RunE: runFlowNodes,
 }
 
 func init() {
 	flowNodesCmd.Flags().StringP("type", "t", "",
-		i18n.T("Flow type (SourceFlow/EventFlow)", "Flow 类型 (SourceFlow/EventFlow)"))
+		"Flow type (SourceFlow/EventFlow)")
 	flowNodesCmd.Flags().Bool("source", false,
-		i18n.T("Show SourceFlow nodes", "查看 SourceFlow 可用节点"))
+		"Show SourceFlow nodes")
 	flowNodesCmd.Flags().Bool("event", false,
-		i18n.T("Show EventFlow nodes", "查看 EventFlow 可用节点"))
+		"Show EventFlow nodes")
 }
 
 func runFlowNodes(cmd *cobra.Command, args []string) error {
@@ -83,22 +80,22 @@ func runFlowNodes(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 	if len(result.Nodes) == 0 {
-		fmt.Fprintf(stdout, i18n.T("No Node-RED nodes found for %s.\n", "%s 暂无可用 Node-RED 节点。\n"), flowType)
+		fmt.Fprintf(stdout, "No Node-RED nodes found for %s.\n", flowType)
 		checker.Emit("", false, stdout, cmd.ErrOrStderr())
 		return nil
 	}
 
 	fmt.Fprintf(stdout, "%-28s  %-8s  %-18s  %s\n",
-		i18n.T("Name", "名称"),
-		i18n.T("Enabled", "启用"),
-		i18n.T("Module", "模块"),
-		i18n.T("Types", "类型"),
+		"Name",
+		"Enabled",
+		"Module",
+		"Types",
 	)
 	fmt.Fprintln(stdout, strings.Repeat("-", 100))
 	for _, item := range result.Nodes {
-		enabled := i18n.T("no", "否")
+		enabled := "no"
 		if item.Enabled {
-			enabled = i18n.T("yes", "是")
+			enabled = "yes"
 		}
 		module := item.Module
 		if module == "" {
@@ -129,14 +126,12 @@ func normalizeFlowNodesType(value string) (string, error) {
 	case "event", "eventflow", "flowtypeevent":
 		return flowTypeEvent, nil
 	case "":
-		return "", errors.New(i18n.T(
+		return "", errors.New(
 			"specify a Flow type via --source, --event, --type SourceFlow|EventFlow, or positional source|event",
-			"请通过 --source、--event、--type SourceFlow|EventFlow 或位置参数 source|event 指定 Flow 类型",
-		))
+		)
 	default:
-		return "", errors.New(i18n.T(
+		return "", errors.New(
 			"flow type must be SourceFlow or EventFlow",
-			"Flow 类型必须是 SourceFlow 或 EventFlow",
-		))
+		)
 	}
 }

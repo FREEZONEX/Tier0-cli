@@ -2,30 +2,27 @@ package cmd
 
 import (
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
-	"github.com/FREEZONEX/Tier0-cli/internal/i18n"
 	"github.com/FREEZONEX/Tier0-cli/internal/notice"
 	"github.com/spf13/cobra"
 )
 
 var unsBrowseCmd = &cobra.Command{
 	Use:   "browse",
-	Short: i18n.T("Browse UNS namespace tree", "浏览 UNS 命名空间树"),
-	Long: i18n.T(
-		"Browse the UNS namespace tree at a given path.\n\nExamples:\n  tier0 uns browse\n  tier0 uns browse --path /devices\n  tier0 uns browse --path / --max-depth 2",
-		"浏览指定路径的 UNS 命名空间树。\n\n示例:\n  tier0 uns browse\n  tier0 uns browse --path /devices\n  tier0 uns browse --path / --max-depth 2",
-	),
+	Short: "Browse UNS namespace tree",
+	Long:  "Browse the UNS namespace tree at a given path.\n\nExamples:\n  tier0 uns browse\n  tier0 uns browse --path /devices\n  tier0 uns browse --path / --max-depth 2",
+
 	RunE: runUnsBrowse,
 }
 
 func init() {
 	unsBrowseCmd.Flags().StringP("path", "p", "/",
-		i18n.T("Path to browse in the UNS tree", "UNS 树中要浏览的路径"))
+		"Path to browse in the UNS tree")
 	unsBrowseCmd.Flags().IntP("max-depth", "d", 1,
-		i18n.T("Max recursion depth (0 = unlimited)", "最大递归深度（0 = 不限制）"))
+		"Max recursion depth (0 = unlimited)")
 	unsBrowseCmd.Flags().Bool("include-metadata", false,
-		i18n.T("Include node metadata", "包含节点元数据"))
+		"Include node metadata")
 	unsBrowseCmd.Flags().Bool("include-leaf-value", false,
-		i18n.T("Include leaf node values", "包含叶子节点值"))
+		"Include leaf node values")
 }
 
 func runUnsBrowse(cmd *cobra.Command, args []string) error {
