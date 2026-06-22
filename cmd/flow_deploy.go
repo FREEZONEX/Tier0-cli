@@ -58,6 +58,10 @@ func runFlowDeploy(cmd *cobra.Command, args []string) error {
 			"provide Node-RED canvas JSON via --flows-json '<json>' or --flows-file <file>",
 		)
 	}
+	normalizedFlowsJSON, err := normalizeNodeREDFlowsJSON(flowsJSON, false)
+	if err != nil {
+		return fmt.Errorf("invalid Node-RED canvas JSON: %w", err)
+	}
 
 	summary :=
 		fmt.Sprintf("Deploy canvas to Flow %d — ALL existing Node-RED nodes will be REPLACED. Back up with 'tier0 flow data --id %d --out backup.json' first.", id, id)
@@ -68,7 +72,7 @@ func runFlowDeploy(cmd *cobra.Command, args []string) error {
 
 	payload := map[string]interface{}{
 		"id":        id,
-		"flowsJson": flowsJSON,
+		"flowsJson": normalizedFlowsJSON,
 	}
 	body, _ := json.Marshal(payload)
 	resp, err := cmdutil.DoAPI(cmd.Context(), "/openapi/v1/flow/deploy", "POST", string(body), debug)

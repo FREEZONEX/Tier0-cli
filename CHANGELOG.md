@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Changed `tier0 flow data --out` to write a deployable Node-RED `flows` array instead of the full API envelope.
+- Made `tier0 flow deploy` accept full API envelopes, `data` objects, or pure `flows` arrays, normalizing all inputs before deployment.
 - CLI output is now English-only.
 - Removed runtime use of the legacy `i18n.T` translation helper from command definitions and deleted the unused i18n package.
 - Updated CLI README, npm wrapper docs, install scripts, release scripts, and user-facing command text to English.

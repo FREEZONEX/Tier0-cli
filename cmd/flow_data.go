@@ -47,7 +47,11 @@ func runFlowData(cmd *cobra.Command, args []string) error {
 	stdout := cmd.OutOrStdout()
 
 	if outFile != "" {
-		if err := os.WriteFile(outFile, []byte(resp), 0644); err != nil {
+		flowsJSON, err := normalizeNodeREDFlowsJSON(resp, true)
+		if err != nil {
+			return fmt.Errorf("failed to extract Node-RED flows from response: %w", err)
+		}
+		if err := os.WriteFile(outFile, []byte(flowsJSON), 0644); err != nil {
 			return fmt.Errorf("failed to write file: %w", err)
 		}
 		fmt.Fprintf(stdout, "✓ Flow data saved to %s\n", outFile)

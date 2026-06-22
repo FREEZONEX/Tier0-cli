@@ -89,6 +89,10 @@ tier0 flow data --id 1 --out flows.json
 tier0 flow deploy --id 1 -f flows.json --yes
 ```
 
+`flow data --out` writes a deployable Node-RED `flows` array. `flow deploy -f`
+also accepts older full API envelope files and extracts the `data.flows` array
+automatically.
+
 ## Flow Types
 
 | Type | Meaning |
