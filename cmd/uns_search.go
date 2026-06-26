@@ -11,15 +11,15 @@ var unsSearchCmd = &cobra.Command{
 	Use:   "search",
 	Short: i18n.T("Search UNS topics", "搜索 UNS 点位"),
 	Long: i18n.T(
-		"Search topics in the UNS by keyword, tag, or path prefix.\n\nExamples:\n  tier0 uns search --keyword temp\n  tier0 uns search --path-prefix /devices --size 50\n  tier0 uns search --keyword temp --include-metadata",
-		"按关键字、标签或路径前缀搜索 UNS 中的点位。\n\n示例:\n  tier0 uns search --keyword temp\n  tier0 uns search --path-prefix /devices --size 50\n  tier0 uns search --keyword temp --include-metadata",
+		"Search topics in the UNS by node name, any path segment, or path prefix.\n\nExamples:\n  tier0 uns search --keyword Line1\n  tier0 uns search --path-prefix /devices --size 50\n  tier0 uns search --keyword temp --include-metadata",
+		"按节点名、任一级路径名或路径前缀搜索 UNS 点位。\n\n示例:\n  tier0 uns search --keyword Line1\n  tier0 uns search --path-prefix /devices --size 50\n  tier0 uns search --keyword temp --include-metadata",
 	),
 	RunE: runUnsSearch,
 }
 
 func init() {
 	unsSearchCmd.Flags().StringP("keyword", "k", "",
-		i18n.T("Search by name keyword", "按名称关键字搜索"))
+		i18n.T("Search by node name or path keyword", "按节点名或路径关键字搜索"))
 	unsSearchCmd.Flags().String("path-prefix", "/",
 		i18n.T("Filter by path prefix", "按路径前缀过滤"))
 	unsSearchCmd.Flags().String("topic-type", "",
