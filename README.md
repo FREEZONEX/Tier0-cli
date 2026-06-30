@@ -130,6 +130,10 @@ tier0 flow get --id 1
 tier0 flow create --name "modbus-collector" --source --desc "Modbus 数据采集"
 tier0 flow create --name "alert-handler"    --event
 
+# JSON 输出会在 data 中返回业务主键 id 和默认注入的 MQTT brokerID
+tier0 flow create --name "modbus-collector" --source --json
+# → {"code":200,"msg":"success","data":{"id":1,"brokerID":"broker-xxxx"}}
+
 # 更新 Flow（名称、描述、收藏）
 tier0 flow update --id 1 --name "new-name" --favorite
 
