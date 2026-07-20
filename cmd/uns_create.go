@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
 	"github.com/FREEZONEX/Tier0-cli/internal/notice"
@@ -49,10 +50,10 @@ func init() {
 		"Deprecated: topic type is now derived from the path (Metric/Action/State folder before leaf)")
 	unsCreateCmd.Flags().String("fields", "",
 		"Schema fields JSON array (e.g. '[{\"name\":\"temp\",\"type\":\"float\"}]')")
+	addDryRunFlag(unsCreateCmd)
 }
 
 func runUnsCreate(cmd *cobra.Command, args []string) error {
-	checker := notice.Start()
 	jsonMode, _ := cmd.Flags().GetBool("json")
 	debug, _ := cmd.Flags().GetBool("debug")
 	topic, _ := cmd.Flags().GetString("topic")
@@ -70,33 +71,41 @@ func runUnsCreate(cmd *cobra.Command, args []string) error {
 
 	errOut := cmd.ErrOrStderr()
 	if file != "" {
-		if topic != "" || nodeType != "" || parent != "" {
-			return fmt.Errorf(
-				"--topic, --type, and --parent cannot be used together with --file",
-			)
+		var conflicts []string
+		for _, name := range []string{"topic", "parent", "type", "display-name", "description", "alias", "topic-type", "fields"} {
+			if cmd.Flags().Changed(name) {
+				conflicts = append(conflicts, "--"+name)
+			}
+		}
+		if len(conflicts) > 0 {
+			return invalidArgument(cmd, "--file", "--file cannot be combined with "+strings.Join(conflicts, ", "))
 		}
 		raw, err := os.ReadFile(file)
 		if err != nil {
-			return fmt.Errorf("failed to read file: %w", err)
+			return fileIOError(cmd, "--file", "read namespace file", file, err)
 		}
 		namespace, err = parseNamespaceFile(raw)
 		if err != nil {
-			return fmt.Errorf("invalid JSON in file: %w", err)
+			return invalidArgumentCause(cmd, "--file", "namespace file is invalid: "+err.Error(), err)
 		}
 	} else {
 		if topic == "" || nodeType == "" {
-			return fmt.Errorf(
-				"--topic and --type are required (or use --file)",
-			)
+			return invalidArgument(cmd, "--topic/--type", "--topic and --type are required (or use --file)")
 		}
 		var err error
 		namespace, createdPath, err = buildNamespaceFromFlags(parent, topic, nodeType, topicType, displayName, description, alias, fields, errOut)
 		if err != nil {
-			return err
+			return invalidArgumentCause(cmd, "--topic/--type", err.Error(), err)
 		}
 	}
 
-	body := cmdutil.JSONString(map[string]any{"namespace": namespace})
+	payload := map[string]any{"namespace": namespace}
+	if handled, err := writeDryRun(cmd, "POST", "/openapi/v1/uns/create", payload); handled {
+		return err
+	}
+
+	checker := notice.Start()
+	body := cmdutil.JSONString(payload)
 	resp, err := cmdutil.DoAPI(cmd.Context(), "/openapi/v1/uns/create", "POST", body, debug)
 	if err != nil {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)

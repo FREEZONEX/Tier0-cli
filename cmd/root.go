@@ -31,6 +31,13 @@ func Execute() error {
 	return rootCmd.Execute()
 }
 
+// JSONMode reports whether the parsed command requested machine-readable
+// output. main uses it for Cobra errors that occur before a RunE handler.
+func JSONMode() bool {
+	jsonMode, _ := rootCmd.PersistentFlags().GetBool("json")
+	return jsonMode
+}
+
 func init() {
 	// Global persistent flags inherited by all subcommands.
 	rootCmd.PersistentFlags().Bool("json", false,

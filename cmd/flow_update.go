@@ -31,10 +31,10 @@ func init() {
 		"Mark as favorite")
 	flowUpdateCmd.Flags().Bool("unfavorite", false,
 		"Remove from favorites")
+	addDryRunFlag(flowUpdateCmd)
 }
 
 func runFlowUpdate(cmd *cobra.Command, args []string) error {
-	checker := notice.Start()
 	jsonMode, _ := cmd.Flags().GetBool("json")
 	debug, _ := cmd.Flags().GetBool("debug")
 	id, _ := cmd.Flags().GetInt64("id")
@@ -46,30 +46,47 @@ func runFlowUpdate(cmd *cobra.Command, args []string) error {
 	unfavorite, _ := cmd.Flags().GetBool("unfavorite")
 
 	if id == 0 && len(args) > 0 {
-		id, _ = strconv.ParseInt(args[0], 10, 64)
+		parsedID, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return invalidArgumentCause(cmd, "flow ID", "flow ID must be an integer: "+err.Error(), err)
+		}
+		id = parsedID
 	}
-	if id == 0 {
-		return fmt.Errorf(
-			"specify a Flow ID via --id <id> or as a positional argument",
-		)
+	if id <= 0 {
+		return invalidArgument(cmd, "--id", "specify a positive Flow ID via --id <id> or as a positional argument")
+	}
+	if cmd.Flags().Changed("template") && cmd.Flags().Changed("template-file") {
+		return invalidArgument(cmd, "--template/--template-file", "--template and --template-file are mutually exclusive")
+	}
+	if favorite && unfavorite {
+		return invalidArgument(cmd, "--favorite/--unfavorite", "--favorite and --unfavorite are mutually exclusive")
 	}
 
 	if templateFile != "" {
 		raw, err := os.ReadFile(templateFile)
 		if err != nil {
-			return fmt.Errorf("failed to read template file: %w", err)
+			return fileIOError(cmd, "--template-file", "read template file", templateFile, err)
 		}
 		template = string(raw)
 	}
+	if template != "" {
+		if _, err := decodeJSONInput(template); err != nil {
+			param := "--template"
+			if templateFile != "" {
+				param = "--template-file"
+			}
+			return invalidArgumentCause(cmd, param, "flow template must be valid JSON: "+err.Error(), err)
+		}
+	}
 
 	payload := map[string]interface{}{"id": id}
-	if flowName != "" {
+	if cmd.Flags().Changed("name") {
 		payload["flowName"] = flowName
 	}
-	if description != "" {
+	if cmd.Flags().Changed("desc") {
 		payload["description"] = description
 	}
-	if template != "" {
+	if cmd.Flags().Changed("template") || cmd.Flags().Changed("template-file") {
 		payload["template"] = template
 	}
 	var isFavorite int64 = -1
@@ -82,7 +99,14 @@ func runFlowUpdate(cmd *cobra.Command, args []string) error {
 	if isFavorite >= 0 {
 		payload["isFavorite"] = isFavorite
 	}
+	if len(payload) == 1 {
+		return invalidArgument(cmd, "update fields", "specify at least one flow field to update")
+	}
+	if handled, err := writeDryRun(cmd, "POST", "/openapi/v1/flow/update", payload); handled {
+		return err
+	}
 
+	checker := notice.Start()
 	body, _ := json.Marshal(payload)
 	resp, err := cmdutil.DoAPI(cmd.Context(), "/openapi/v1/flow/update", "POST", string(body), debug)
 	if err != nil {

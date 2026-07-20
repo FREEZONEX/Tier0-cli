@@ -15,6 +15,9 @@ import "encoding/json"
 // the JSON "type" field and is wire-stable — do not rename existing constants.
 type Category string
 
+// Subtype identifies a stable failure reason within a category.
+type Subtype string
+
 const (
 	// CategoryValidation covers malformed user input: bad flag values, missing
 	// required arguments, mutually exclusive flags.
@@ -48,6 +51,13 @@ const (
 	CategoryConfirmation Category = "confirmation" // exit 10
 )
 
+const (
+	SubtypeInvalidArgument    Subtype = "invalid_argument"
+	SubtypeFailedPrecondition Subtype = "failed_precondition"
+	SubtypeFileIO             Subtype = "file_io"
+	SubtypeUnknown            Subtype = "unknown"
+)
+
 // ExitCode maps a Category to its canonical shell exit code.
 //
 //	2  validation      — caller passed bad input
@@ -79,11 +89,14 @@ func ExitCode(c Category) int {
 // Use New() or the package-level constructors to create one.
 type CLIError struct {
 	Cat         Category
+	Subtype     Subtype
+	Param       string
 	Code        int
 	Msg         string
 	HintText    string
 	HintCmd     string
 	IsRetryable bool
+	Cause       error
 }
 
 func (e *CLIError) Error() string {
@@ -93,6 +106,9 @@ func (e *CLIError) Error() string {
 	return e.Msg
 }
 
+// Unwrap preserves the lower-level cause for errors.Is/errors.As callers.
+func (e *CLIError) Unwrap() error { return e.Cause }
+
 // Category satisfies the Categorizer interface.
 func (e *CLIError) Category() Category { return e.Cat }
 
@@ -100,6 +116,45 @@ func (e *CLIError) Category() Category { return e.Cat }
 // Attach hints with WithHint; mark transient failures with WithRetryable.
 func New(cat Category, code int, msg string) *CLIError {
 	return &CLIError{Cat: cat, Code: code, Msg: msg}
+}
+
+// InvalidArgument creates a validation error tied to a user-controlled input.
+func InvalidArgument(param, msg string) *CLIError {
+	return New(CategoryValidation, 0, msg).
+		WithSubtype(SubtypeInvalidArgument).
+		WithParam(param)
+}
+
+// FailedPrecondition creates a validation error for a valid request that
+// cannot run in the current state.
+func FailedPrecondition(msg string) *CLIError {
+	return New(CategoryValidation, 0, msg).WithSubtype(SubtypeFailedPrecondition)
+}
+
+// FileIO creates a classified local filesystem error and preserves its cause.
+func FileIO(param, msg string, cause error) *CLIError {
+	return New(CategoryInternal, 0, msg).
+		WithSubtype(SubtypeFileIO).
+		WithParam(param).
+		WithCause(cause)
+}
+
+// WithSubtype attaches a stable machine-readable failure subtype.
+func (e *CLIError) WithSubtype(subtype Subtype) *CLIError {
+	e.Subtype = subtype
+	return e
+}
+
+// WithParam identifies the flag or argument that failed validation.
+func (e *CLIError) WithParam(param string) *CLIError {
+	e.Param = param
+	return e
+}
+
+// WithCause preserves the lower-level error without exposing it in JSON.
+func (e *CLIError) WithCause(cause error) *CLIError {
+	e.Cause = cause
+	return e
 }
 
 // WithHint attaches a human-readable recovery hint and an optional ready-to-run
@@ -130,6 +185,8 @@ type Envelope struct {
 // ErrorDetail carries the structured error fields inside the envelope.
 type ErrorDetail struct {
 	Type        Category `json:"type"`
+	Subtype     Subtype  `json:"subtype,omitempty"`
+	Param       string   `json:"param,omitempty"`
 	Code        int      `json:"code,omitempty"`
 	Message     string   `json:"message"`
 	Hint        string   `json:"hint,omitempty"`
@@ -149,6 +206,8 @@ func BuildEnvelope(e *CLIError) Envelope {
 		OK: false,
 		Error: ErrorDetail{
 			Type:        e.Cat,
+			Subtype:     e.Subtype,
+			Param:       e.Param,
 			Code:        e.Code,
 			Message:     e.Msg,
 			Hint:        e.HintText,

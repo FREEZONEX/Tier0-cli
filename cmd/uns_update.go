@@ -35,10 +35,10 @@ func init() {
 	unsUpdateCmd.Flags().StringSlice("update-mask", nil,
 		"Fields to update (repeatable, e.g. name,description,fields)")
 	unsUpdateCmd.MarkFlagRequired("path")
+	addDryRunFlag(unsUpdateCmd)
 }
 
 func runUnsUpdate(cmd *cobra.Command, args []string) error {
-	checker := notice.Start()
 	jsonMode, _ := cmd.Flags().GetBool("json")
 	debug, _ := cmd.Flags().GetBool("debug")
 	path, _ := cmd.Flags().GetString("path")
@@ -51,36 +51,50 @@ func runUnsUpdate(cmd *cobra.Command, args []string) error {
 	updateMask, _ := cmd.Flags().GetStringSlice("update-mask")
 
 	payload := map[string]any{"path": path}
-	if name != "" {
+	hasUpdate := false
+	if cmd.Flags().Changed("name") {
 		payload["name"] = name
+		hasUpdate = true
 	}
-	if alias != "" {
+	if cmd.Flags().Changed("alias") {
 		payload["alias"] = alias
+		hasUpdate = true
 	}
-	if description != "" {
+	if cmd.Flags().Changed("description") {
 		payload["description"] = description
+		hasUpdate = true
 	}
-	if displayName != "" {
+	if cmd.Flags().Changed("display-name") {
 		payload["displayName"] = displayName
+		hasUpdate = true
 	}
-	if extendProps != "" {
+	if cmd.Flags().Changed("extend-properties") {
 		var props map[string]any
 		if err := json.Unmarshal([]byte(extendProps), &props); err != nil {
-			return fmt.Errorf("invalid extend-properties JSON: %w", err)
+			return invalidArgumentCause(cmd, "--extend-properties", "--extend-properties must be a JSON object: "+err.Error(), err)
 		}
 		payload["extendProperties"] = props
+		hasUpdate = true
 	}
-	if fields != "" {
+	if cmd.Flags().Changed("fields") {
 		var fieldList []any
 		if err := json.Unmarshal([]byte(fields), &fieldList); err != nil {
-			return fmt.Errorf("invalid fields JSON: %w", err)
+			return invalidArgumentCause(cmd, "--fields", "--fields must be a JSON array: "+err.Error(), err)
 		}
 		payload["fields"] = fieldList
+		hasUpdate = true
 	}
 	if len(updateMask) > 0 {
 		payload["updateMask"] = updateMask
 	}
+	if !hasUpdate {
+		return invalidArgument(cmd, "update fields", "specify at least one field to update")
+	}
+	if handled, err := writeDryRun(cmd, "POST", "/openapi/v1/uns/update", payload); handled {
+		return err
+	}
 
+	checker := notice.Start()
 	body := cmdutil.JSONString(payload)
 	resp, err := cmdutil.DoAPI(cmd.Context(), "/openapi/v1/uns/update", "POST", body, debug)
 	if err != nil {

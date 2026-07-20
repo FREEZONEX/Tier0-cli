@@ -41,13 +41,14 @@ func runConfig(cmd *cobra.Command, args []string) error {
 		if setLang != "" {
 			setLang = strings.ToLower(strings.TrimSpace(setLang))
 			if setLang != "en" {
-				return fmt.Errorf(
-					"unsupported language %q; Tier0 CLI output is English-only",
-					setLang)
+				return invalidArgument(cmd, "--lang", fmt.Sprintf("unsupported language %q; Tier0 CLI output is English-only", setLang))
 			}
 		}
 
-		profile, _ := config.LoadProfile()
+		profile, err := config.LoadProfile()
+		if err != nil {
+			return configCommandError(cmd, "failed to load config: "+err.Error(), err)
+		}
 		if setBaseURL != "" {
 			profile.BaseURL = strings.TrimRight(setBaseURL, "/")
 		}
@@ -58,7 +59,7 @@ func runConfig(cmd *cobra.Command, args []string) error {
 			profile.Lang = "en"
 		}
 		if err := config.SaveProfile(profile); err != nil {
-			return fmt.Errorf("failed to save config: %w", err)
+			return configCommandError(cmd, "failed to save config: "+err.Error(), err)
 		}
 		if setBaseURL != "" {
 			fmt.Fprintf(stdout, "✓ BaseURL set to: %s\n", strings.TrimRight(setBaseURL, "/"))
@@ -75,7 +76,7 @@ func runConfig(cmd *cobra.Command, args []string) error {
 	// Read mode
 	profile, err := config.LoadProfile()
 	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+		return configCommandError(cmd, "failed to load config: "+err.Error(), err)
 	}
 
 	baseURL := cmdutil.ResolveBaseURL("")

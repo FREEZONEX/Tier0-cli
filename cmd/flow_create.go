@@ -31,10 +31,10 @@ func init() {
 		"Initial template JSON string")
 	flowCreateCmd.Flags().String("template-file", "",
 		"Read initial template from file")
+	addDryRunFlag(flowCreateCmd)
 }
 
 func runFlowCreate(cmd *cobra.Command, args []string) error {
-	checker := notice.Start()
 	jsonMode, _ := cmd.Flags().GetBool("json")
 	debug, _ := cmd.Flags().GetBool("debug")
 	flowName, _ := cmd.Flags().GetString("name")
@@ -42,31 +42,50 @@ func runFlowCreate(cmd *cobra.Command, args []string) error {
 	description, _ := cmd.Flags().GetString("desc")
 	template, _ := cmd.Flags().GetString("template")
 	templateFile, _ := cmd.Flags().GetString("template-file")
+	source, _ := cmd.Flags().GetBool("source")
+	event, _ := cmd.Flags().GetBool("event")
 
-	if source, _ := cmd.Flags().GetBool("source"); source {
+	if source && event {
+		return invalidArgument(cmd, "--source/--event", "--source and --event are mutually exclusive")
+	}
+	if cmd.Flags().Changed("type") && (source || event) {
+		return invalidArgument(cmd, "--type", "--type cannot be combined with --source or --event")
+	}
+	if source {
 		flowType = flowTypeSource
 	}
-	if event, _ := cmd.Flags().GetBool("event"); event {
+	if event {
 		flowType = flowTypeEvent
+	}
+	if cmd.Flags().Changed("template") && cmd.Flags().Changed("template-file") {
+		return invalidArgument(cmd, "--template/--template-file", "--template and --template-file are mutually exclusive")
 	}
 
 	if templateFile != "" {
 		raw, err := os.ReadFile(templateFile)
 		if err != nil {
-			return fmt.Errorf("failed to read template file: %w", err)
+			return fileIOError(cmd, "--template-file", "read template file", templateFile, err)
 		}
 		template = string(raw)
 	}
 
 	if flowName == "" {
-		return fmt.Errorf(
-			"flow name is required (--name)",
-		)
+		return invalidArgument(cmd, "--name", "flow name is required (--name)")
 	}
 	if flowType == "" {
-		return fmt.Errorf(
-			"flow type is required: use --type SourceFlow|EventFlow, or --source / --event",
-		)
+		return invalidArgument(cmd, "--type", "flow type is required: use --type SourceFlow|EventFlow, or --source / --event")
+	}
+	if flowType != flowTypeSource && flowType != flowTypeEvent {
+		return invalidArgument(cmd, "--type", "--type must be SourceFlow or EventFlow")
+	}
+	if template != "" {
+		if _, err := decodeJSONInput(template); err != nil {
+			param := "--template"
+			if templateFile != "" {
+				param = "--template-file"
+			}
+			return invalidArgumentCause(cmd, param, "flow template must be valid JSON: "+err.Error(), err)
+		}
 	}
 
 	payload := map[string]string{
@@ -75,6 +94,11 @@ func runFlowCreate(cmd *cobra.Command, args []string) error {
 		"description": description,
 		"template":    template,
 	}
+	if handled, err := writeDryRun(cmd, "POST", "/openapi/v1/flow/create", payload); handled {
+		return err
+	}
+
+	checker := notice.Start()
 	body, _ := json.Marshal(payload)
 	resp, err := cmdutil.DoAPI(cmd.Context(), "/openapi/v1/flow/create", "POST", string(body), debug)
 	if err != nil {

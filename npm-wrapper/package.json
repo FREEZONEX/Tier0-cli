@@ -1,17 +1,20 @@
 {
   "name": "@tier0/cli",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "description": "Tier0 CLI — Unified Namespace data platform command line tool",
   "bin": {
     "tier0": "./bin/tier0"
   },
   "scripts": {
     "postinstall": "node lib/install.js",
-    "preuninstall": "node lib/uninstall.js"
+    "preuninstall": "node lib/uninstall.js",
+    "prepublishOnly": "npm test",
+    "test": "node --test lib/*.test.js"
   },
   "files": [
     "bin/",
-    "lib/",
+    "lib/install.js",
+    "lib/uninstall.js",
     "README.md"
   ],
   "repository": {

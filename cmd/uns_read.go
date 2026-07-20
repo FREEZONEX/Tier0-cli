@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
 	"github.com/FREEZONEX/Tier0-cli/internal/notice"
 	"github.com/spf13/cobra"
@@ -26,7 +24,6 @@ func init() {
 }
 
 func runUnsRead(cmd *cobra.Command, args []string) error {
-	checker := notice.Start()
 	jsonMode, _ := cmd.Flags().GetBool("json")
 	debug, _ := cmd.Flags().GetBool("debug")
 	topics, _ := cmd.Flags().GetStringSlice("topic")
@@ -34,9 +31,7 @@ func runUnsRead(cmd *cobra.Command, args []string) error {
 	includeLeaf, _ := cmd.Flags().GetBool("include-leaf-value")
 	topics = append(topics, args...)
 	if len(topics) == 0 {
-		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("%s",
-			"specify at least one topic via --topic <path> or positional arguments",
-		), jsonMode)
+		return invalidArgument(cmd, "--topic", "specify at least one topic via --topic <path> or positional arguments")
 	}
 
 	payload := map[string]any{"topics": topics}
@@ -49,6 +44,7 @@ func runUnsRead(cmd *cobra.Command, args []string) error {
 
 	body := cmdutil.JSONString(payload)
 
+	checker := notice.Start()
 	resp, err := cmdutil.DoAPI(cmd.Context(), "/openapi/v1/uns/read", "POST", body, debug)
 	if err != nil {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)

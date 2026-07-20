@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 var uninstallCmd = &cobra.Command{
@@ -31,7 +32,7 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return fmt.Errorf("cannot determine home directory: %w", err)
+		return internalCommandError(cmd, "cannot determine home directory: "+err.Error(), err)
 	}
 
 	tier0Dir := filepath.Join(home, ".tier0")
@@ -50,7 +51,7 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 		binName = "tier0.exe"
 	}
 	binPath := filepath.Join(binDir, binName)
-	if removeFile(stdout, binPath, "binary") {
+	if removeBinary(stdout, binPath) {
 		removed++
 	}
 	removeFile(stdout, filepath.Join(binDir, ".version"), "version record")
@@ -98,6 +99,49 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(stdout, "\ntier0 CLI uninstalled successfully.")
 	}
 	return nil
+}
+
+func removeBinary(stdout interface{ Write([]byte) (int, error) }, path string) bool {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return false
+	}
+
+	if err := os.Remove(path); err == nil {
+		fmt.Fprintf(stdout, "✓ Removed binary: %s\n", path)
+		return true
+	} else if runtime.GOOS != "windows" {
+		fmt.Fprintf(stdout, "⚠ Failed to remove binary: %s\n", err)
+		return false
+	}
+
+	// Windows keeps the running executable locked. Only fall back to delayed
+	// removal when this process is uninstalling itself; other access errors
+	// should still be reported to the user.
+	currentExe, err := os.Executable()
+	if err != nil || !strings.EqualFold(filepath.Clean(currentExe), filepath.Clean(path)) {
+		fmt.Fprintf(stdout, "⚠ Failed to remove binary: access denied: %s\n", path)
+		return false
+	}
+
+	quotedPath := strings.ReplaceAll(path, "'", "''")
+	script := fmt.Sprintf(
+		"Start-Sleep -Milliseconds 500; Remove-Item -LiteralPath '%s' -Force -ErrorAction SilentlyContinue",
+		quotedPath,
+	)
+	cleanup := exec.Command(
+		"powershell.exe",
+		"-NoProfile",
+		"-NonInteractive",
+		"-WindowStyle", "Hidden",
+		"-Command", script,
+	)
+	if err := cleanup.Start(); err != nil {
+		fmt.Fprintf(stdout, "⚠ Failed to schedule binary removal: %s\n", err)
+		return false
+	}
+	_ = cleanup.Process.Release()
+	fmt.Fprintf(stdout, "✓ Scheduled binary removal: %s\n", path)
+	return true
 }
 
 func removeFile(stdout interface{ Write([]byte) (int, error) }, path, label string) bool {

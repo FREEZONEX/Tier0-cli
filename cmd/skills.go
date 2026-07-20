@@ -3,6 +3,8 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+
 	"github.com/FREEZONEX/Tier0-cli/internal/upgrade"
 	"github.com/FREEZONEX/Tier0-cli/internal/version"
 	"github.com/spf13/cobra"
@@ -53,7 +55,7 @@ func runSkillsList(cmd *cobra.Command, args []string) error {
 	skillsDir := upgrade.GetDefaultSkillsDir()
 	result, err := upgrade.ListSkills(skillsDir)
 	if err != nil {
-		return fmt.Errorf("failed to list skills: %w", err)
+		return internalCommandError(cmd, "failed to list skills: "+err.Error(), err)
 	}
 
 	if jsonMode {
@@ -101,13 +103,15 @@ func runSkillsUpdate(cmd *cobra.Command, args []string) error {
 
 	result, err := upgrade.UpdateSkills(skillsDir, dryRun)
 	if err != nil {
-		if jsonMode {
-			output, _ := json.MarshalIndent(result, "", "  ")
-			fmt.Fprintln(stdout, string(output))
+		return internalCommandError(cmd, "failed to upgrade skills: "+err.Error(), err)
+	}
+	if !dryRun {
+		if err := upgrade.SyncAgentSkills(skillsDir); err != nil {
+			result.AgentSyncStatus = "failed"
+			result.AgentSyncError = err.Error()
 		} else {
-			return fmt.Errorf("failed to upgrade skills: %w", err)
+			result.AgentSyncStatus = "synced"
 		}
-		return err
 	}
 
 	if jsonMode {
@@ -118,6 +122,7 @@ func runSkillsUpdate(cmd *cobra.Command, args []string) error {
 
 	if result.UpToDate {
 		fmt.Fprintf(stdout, "Skills are up to date: %s\n", result.CurrentVersion)
+		printAgentSkillsSync(stdout, result)
 		return nil
 	}
 
@@ -135,7 +140,17 @@ func runSkillsUpdate(cmd *cobra.Command, args []string) error {
 		"Skills upgraded: %s → %s\n",
 		result.CurrentVersion, result.LatestVersion)
 	fmt.Fprintf(stdout, "Updated %d skill(s)\n", result.UpdatedCount)
+	printAgentSkillsSync(stdout, result)
 	return nil
+}
+
+func printAgentSkillsSync(stdout io.Writer, result *upgrade.SkillsUpdateResult) {
+	switch result.AgentSyncStatus {
+	case "synced":
+		fmt.Fprintln(stdout, "Agent Skills synced to detected global agents")
+	case "failed":
+		fmt.Fprintf(stdout, "Warning: local Skills updated, but Agent Skills sync failed: %s\n", result.AgentSyncError)
+	}
 }
 
 func runSkillsVersion(cmd *cobra.Command, args []string) error {

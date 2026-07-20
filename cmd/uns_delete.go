@@ -27,10 +27,10 @@ func init() {
 		"Hard delete (irreversible)")
 	unsDeleteCmd.Flags().BoolP("yes", "y", false,
 		"Confirm high-risk operation (required)")
+	addDryRunFlag(unsDeleteCmd)
 }
 
 func runUnsDelete(cmd *cobra.Command, args []string) error {
-	checker := notice.Start()
 	jsonMode, _ := cmd.Flags().GetBool("json")
 	debug, _ := cmd.Flags().GetBool("debug")
 	confirmed, _ := cmd.Flags().GetBool("yes")
@@ -46,9 +46,7 @@ func runUnsDelete(cmd *cobra.Command, args []string) error {
 		topics = append(topics, legacyTopics...)
 	}
 	if len(topics) == 0 {
-		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("%s",
-			"specify at least one path via --path <path>",
-		), jsonMode)
+		return invalidArgument(cmd, "--path", "specify at least one path via --path <path>")
 	}
 
 	action := "soft delete"
@@ -63,15 +61,18 @@ func runUnsDelete(cmd *cobra.Command, args []string) error {
 			return "soft deleted items can be restored"
 		}())
 
-	if err := highrisk.Guard(confirmed, "uns delete", summary); err != nil {
-		return err
-	}
-
 	payload := map[string]any{"topics": topics}
 	if hard {
 		payload["hard_delete"] = true
 	}
+	if handled, err := writeDryRun(cmd, "POST", "/openapi/v1/uns/delete", payload); handled {
+		return err
+	}
+	if err := highrisk.Guard(confirmed, "uns delete", summary); err != nil {
+		return err
+	}
 
+	checker := notice.Start()
 	body := cmdutil.JSONString(payload)
 	resp, err := cmdutil.DoAPI(cmd.Context(), "/openapi/v1/uns/delete", "POST", body, debug)
 	if err != nil {

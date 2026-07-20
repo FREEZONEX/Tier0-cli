@@ -7,10 +7,12 @@ Tier0 platform command-line tool.
 Recommended, cross-platform, requires Node.js >= 16:
 
 ```bash
-npx @tier0/cli@latest
+npx @tier0/cli@latest install
 ```
 
-This installs the Go `tier0` binary into `~/.tier0/bin/` and installs Agent Skills from `FREEZONEX/Tier0-skill`.
+This installs the Go `tier0` binary into `~/.tier0/bin/`, extracts the matching versioned Skill into `~/.tier0/skills/`, and copies it globally to detected agents such as Codex, Claude Code, and Cursor.
+
+Skills can still be updated independently of the CLI. `tier0 skills update` downloads the latest `FREEZONEX/Tier0-skill` content into `~/.tier0/skills/` and resynchronizes detected agents.
 
 Global install:
 
@@ -93,6 +95,46 @@ tier0 flow deploy --id 1 -f flows.json --yes
 also accepts older full API envelope files and extracts the `data.flows` array
 automatically.
 
+## Request Previews
+
+Use `--dry-run` to validate and preview a write request without requiring an API
+key, contacting Tier0, or requiring `--yes` for a high-risk operation:
+
+```bash
+tier0 uns write --topic demo --value '{"value":1}' --dry-run
+tier0 flow deploy --id 1 --flows-file flows.json --dry-run --json
+tier0 api /openapi/v1/uns/write --body-file body.json --dry-run --json
+```
+
+Request previews are supported by `api`, UNS `write/create/update/delete/restore`,
+and Flow `create/update/delete/deploy`. JSON previews use one stable envelope:
+
+```json
+{
+  "ok": true,
+  "dry_run": true,
+  "data": {
+    "api": [
+      {"method": "POST", "url": "https://tier0.dev/openapi/v1/uns/write", "body": {}}
+    ]
+  }
+}
+```
+
+Headers and API keys are never included. Request body flags and files must
+contain valid JSON; the CLI no longer guesses at or rewrites malformed JSON.
+
+## Structured Errors
+
+With `--json`, command validation failures are written to stderr with stable
+`type`, `subtype`, and `param` fields:
+
+```json
+{"ok":false,"error":{"type":"validation","subtype":"invalid_argument","param":"--qos","message":"--qos must be 0, 1, or 2"}}
+```
+
+Automation should branch on these fields rather than matching message text.
+
 ## Flow Types
 
 | Type | Meaning |
@@ -162,8 +204,8 @@ The npm package and Go binary versions are kept in sync by `scripts/release.sh`.
 
 ```bash
 export GITHUB_TOKEN=ghp_xxxxxxxx
-export NPM_TOKEN=npm_xxxxxxxx
-bash scripts/release.sh v0.5.0
+npm login
+bash scripts/release.sh vX.Y.Z
 ```
 
-The release process cross-compiles binaries, uploads GitHub Release assets, updates `npm-wrapper/package.json`, publishes npm, and packages skills.
+For automation, set `NPM_TOKEN` instead of running `npm login`. Before creating the GitHub Release, the script runs npm tests, validates the packed file list, and verifies npm authentication. The release process then cross-compiles binaries, packages versioned Skills, uploads GitHub Release assets, updates `npm-wrapper/package.json`, and publishes npm.

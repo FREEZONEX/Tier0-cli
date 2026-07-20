@@ -26,10 +26,10 @@ func init() {
 		"Read Node-RED canvas JSON from file (recommended)")
 	flowDeployCmd.Flags().BoolP("yes", "y", false,
 		"Confirm high-risk operation (required)")
+	addDryRunFlag(flowDeployCmd)
 }
 
 func runFlowDeploy(cmd *cobra.Command, args []string) error {
-	checker := notice.Start()
 	jsonMode, _ := cmd.Flags().GetBool("json")
 	debug, _ := cmd.Flags().GetBool("debug")
 	confirmed, _ := cmd.Flags().GetBool("yes")
@@ -38,42 +38,54 @@ func runFlowDeploy(cmd *cobra.Command, args []string) error {
 	flowsFile, _ := cmd.Flags().GetString("flows-file")
 
 	if id == 0 && len(args) > 0 {
-		id, _ = strconv.ParseInt(args[0], 10, 64)
+		parsedID, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return invalidArgumentCause(cmd, "flow ID", "flow ID must be an integer: "+err.Error(), err)
+		}
+		id = parsedID
 	}
-	if id == 0 {
-		return fmt.Errorf(
-			"specify a Flow ID via --id <id> or as a positional argument",
-		)
+	if id <= 0 {
+		return invalidArgument(cmd, "--id", "specify a positive Flow ID via --id <id> or as a positional argument")
+	}
+	if cmd.Flags().Changed("flows-json") && cmd.Flags().Changed("flows-file") {
+		return invalidArgument(cmd, "--flows-json/--flows-file", "--flows-json and --flows-file are mutually exclusive")
 	}
 
 	if flowsFile != "" {
 		raw, err := os.ReadFile(flowsFile)
 		if err != nil {
-			return fmt.Errorf("failed to read flows file: %w", err)
+			return fileIOError(cmd, "--flows-file", "read flows file", flowsFile, err)
 		}
 		flowsJSON = string(raw)
 	}
 	if flowsJSON == "" {
-		return fmt.Errorf(
-			"provide Node-RED canvas JSON via --flows-json '<json>' or --flows-file <file>",
-		)
+		return invalidArgument(cmd, "--flows-json/--flows-file", "provide Node-RED canvas JSON via --flows-json '<json>' or --flows-file <file>")
 	}
 	normalizedFlowsJSON, err := normalizeNodeREDFlowsJSON(flowsJSON, false)
 	if err != nil {
-		return fmt.Errorf("invalid Node-RED canvas JSON: %w", err)
+		param := "--flows-json"
+		if flowsFile != "" {
+			param = "--flows-file"
+		}
+		return invalidArgumentCause(cmd, param, "invalid Node-RED canvas JSON: "+err.Error(), err)
 	}
 
 	summary :=
 		fmt.Sprintf("Deploy canvas to Flow %d — ALL existing Node-RED nodes will be REPLACED. Back up with 'tier0 flow data --id %d --out backup.json' first.", id, id)
 
-	if err := highrisk.Guard(confirmed, "flow deploy", summary); err != nil {
-		return err
-	}
-
 	payload := map[string]interface{}{
 		"id":        id,
 		"flowsJson": normalizedFlowsJSON,
 	}
+	if handled, err := writeDryRun(cmd, "POST", "/openapi/v1/flow/deploy", payload); handled {
+		return err
+	}
+
+	if err := highrisk.Guard(confirmed, "flow deploy", summary); err != nil {
+		return err
+	}
+
+	checker := notice.Start()
 	body, _ := json.Marshal(payload)
 	resp, err := cmdutil.DoAPI(cmd.Context(), "/openapi/v1/flow/deploy", "POST", string(body), debug)
 	if err != nil {

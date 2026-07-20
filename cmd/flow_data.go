@@ -24,21 +24,23 @@ func init() {
 }
 
 func runFlowData(cmd *cobra.Command, args []string) error {
-	checker := notice.Start()
 	debug, _ := cmd.Flags().GetBool("debug")
 	id, _ := cmd.Flags().GetInt64("id")
 	outFile, _ := cmd.Flags().GetString("out")
 
 	if id == 0 && len(args) > 0 {
-		id, _ = strconv.ParseInt(args[0], 10, 64)
+		parsedID, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return invalidArgumentCause(cmd, "flow ID", "flow ID must be an integer: "+err.Error(), err)
+		}
+		id = parsedID
 	}
-	if id == 0 {
-		return fmt.Errorf(
-			"specify a Flow ID via --id <id> or as a positional argument",
-		)
+	if id <= 0 {
+		return invalidArgument(cmd, "--id", "specify a positive Flow ID via --id <id> or as a positional argument")
 	}
 
 	body, _ := json.Marshal(map[string]int64{"id": id})
+	checker := notice.Start()
 	resp, err := cmdutil.DoAPI(cmd.Context(), "/openapi/v1/flow/flowdata", "POST", string(body), debug)
 	if err != nil {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, true) // data always JSON error
@@ -49,10 +51,10 @@ func runFlowData(cmd *cobra.Command, args []string) error {
 	if outFile != "" {
 		flowsJSON, err := normalizeNodeREDFlowsJSON(resp, true)
 		if err != nil {
-			return fmt.Errorf("failed to extract Node-RED flows from response: %w", err)
+			return internalCommandError(cmd, "failed to extract Node-RED flows from response: "+err.Error(), err)
 		}
 		if err := os.WriteFile(outFile, []byte(flowsJSON), 0644); err != nil {
-			return fmt.Errorf("failed to write file: %w", err)
+			return fileIOError(cmd, "--out", "write flow data file", outFile, err)
 		}
 		fmt.Fprintf(stdout, "✓ Flow data saved to %s\n", outFile)
 		checker.Emit("", false, stdout, cmd.ErrOrStderr())
