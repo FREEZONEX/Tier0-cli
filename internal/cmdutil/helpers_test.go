@@ -3,6 +3,9 @@ package cmdutil
 import (
 	"strings"
 	"testing"
+
+	"github.com/FREEZONEX/Tier0-cli/internal/apierr"
+	"github.com/FREEZONEX/Tier0-cli/internal/errs"
 )
 
 func TestCheckResponseDetectsBusinessSuccessFalse(t *testing.T) {
@@ -26,3 +29,20 @@ func TestCheckResponseDetectsOuterDataSuccessFalse(t *testing.T) {
 		t.Fatalf("error = %q, want data.success=false", err.Error())
 	}
 }
+
+func TestIsClassifiedDistinguishesAPIErrorsFromCobraFallbacks(t *testing.T) {
+	apiErr := apierr.New(500, `{"code":500,"msg":"server error"}`)
+	if !IsClassified(apiErr) {
+		t.Fatal("APIError must be recognized as classified")
+	}
+	if CategoryOf(apiErr) != errs.CategoryAPI {
+		t.Fatalf("category = %q, want api", CategoryOf(apiErr))
+	}
+	if IsClassified(assertionError("unknown flag")) {
+		t.Fatal("plain Cobra-style errors must remain unclassified")
+	}
+}
+
+type assertionError string
+
+func (e assertionError) Error() string { return string(e) }

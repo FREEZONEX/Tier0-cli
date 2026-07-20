@@ -46,7 +46,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 			version.BuildVersion)
 		result, err := upgrade.Perform(opts)
 		if err != nil {
-			return fmt.Errorf("failed to check for updates: %w", err)
+			return internalCommandError(cmd, "failed to check for updates: "+err.Error(), err)
 		}
 		if jsonMode {
 			output, _ := json.MarshalIndent(result, "", "  ")
@@ -71,15 +71,10 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 
 	result, err := upgrade.Perform(opts)
 	if err != nil {
-		if jsonMode {
-			output, _ := json.MarshalIndent(result, "", "  ")
-			fmt.Fprintln(stdout, string(output))
-			return nil
-		}
 		if result.ErrorMessage != "" {
-			return fmt.Errorf("upgrade failed: %s", result.ErrorMessage)
+			return internalCommandError(cmd, "upgrade failed: "+result.ErrorMessage, err)
 		}
-		return fmt.Errorf("upgrade failed: %w", err)
+		return internalCommandError(cmd, "upgrade failed: "+err.Error(), err)
 	}
 
 	if jsonMode {

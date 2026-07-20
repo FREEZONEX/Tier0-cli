@@ -101,9 +101,7 @@ func loginPoll(cmd *cobra.Command, baseURL, setupCode string, jsonMode bool, std
 		APIKey:  result.APIKey,
 	}
 	if err := config.SaveProfile(profile); err != nil {
-		return cmdutil.HandleCommandError(stderr, fmt.Errorf(
-			"failed to save config: %w",
-			err), jsonMode)
+		return configCommandError(cmd, "failed to save config: "+err.Error(), err)
 	}
 
 	if jsonMode {

@@ -34,17 +34,27 @@ func init() {
 }
 
 func runFlowList(cmd *cobra.Command, args []string) error {
-	checker := notice.Start()
 	jsonMode, _ := cmd.Flags().GetBool("json")
 	debug, _ := cmd.Flags().GetBool("debug")
 	keyword, _ := cmd.Flags().GetString("keyword")
 	flowType, _ := cmd.Flags().GetString("type")
+	source, _ := cmd.Flags().GetBool("source")
+	event, _ := cmd.Flags().GetBool("event")
 
-	if source, _ := cmd.Flags().GetBool("source"); source {
+	if source && event {
+		return invalidArgument(cmd, "--source/--event", "--source and --event are mutually exclusive")
+	}
+	if cmd.Flags().Changed("type") && (source || event) {
+		return invalidArgument(cmd, "--type", "--type cannot be combined with --source or --event")
+	}
+	if source {
 		flowType = flowTypeSource
 	}
-	if event, _ := cmd.Flags().GetBool("event"); event {
+	if event {
 		flowType = flowTypeEvent
+	}
+	if flowType != "" && flowType != flowTypeSource && flowType != flowTypeEvent {
+		return invalidArgument(cmd, "--type", "--type must be SourceFlow or EventFlow")
 	}
 
 	body, _ := json.Marshal(map[string]string{
@@ -52,6 +62,7 @@ func runFlowList(cmd *cobra.Command, args []string) error {
 		"flowType": flowType,
 	})
 
+	checker := notice.Start()
 	resp, err := cmdutil.DoAPI(cmd.Context(), "/openapi/v1/flow/list", "POST", string(body), debug)
 	if err != nil {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)

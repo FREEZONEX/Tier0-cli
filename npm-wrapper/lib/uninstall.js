@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { execSync } = require('child_process');
+const { execFileSync, execSync } = require('child_process');
 
 const TIER0_DIR = path.join(os.homedir(), '.tier0');
 const BIN_DIR = path.join(TIER0_DIR, 'bin');
@@ -12,6 +12,13 @@ const CONFIG_FILE = path.join(TIER0_DIR, 'config.json');
 
 function binaryName() {
   return process.platform === 'win32' ? 'tier0.exe' : 'tier0';
+}
+
+function runCommand(command, args, options) {
+  if (process.platform === 'win32') {
+    return execSync([command, ...args].join(' '), options);
+  }
+  return execFileSync(command, args, options);
 }
 
 function removeDir(dir, label) {
@@ -35,11 +42,11 @@ function removeFile(file, label) {
 function uninstallAgentSkills() {
   console.log('\nRemoving Tier0 agent skills...');
   try {
-    execSync('npx --yes skills remove FREEZONEX/Tier0-skill', { stdio: 'inherit' });
+    runCommand('npx', ['-y', '--package=skills', '--', 'skills', 'remove', 'tier0', '-y', '-g'], { stdio: 'inherit' });
     console.log('✓ Tier0 agent skills removed.');
   } catch (err) {
     console.warn(`⚠ Agent skills removal failed (non-fatal): ${err.message}`);
-    console.warn('  You can remove manually: npx skills remove FREEZONEX/Tier0-skill');
+    console.warn('  You can remove manually: npx -y skills remove tier0 -y -g');
   }
 }
 

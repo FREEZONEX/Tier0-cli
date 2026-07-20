@@ -1,7 +1,18 @@
 # Changelog
 
-## Unreleased
+## v0.6.4 - 2026-07-20
 
+- Made the npm installer deploy the versioned local Release Skill globally and non-interactively to detected agents such as Codex and Claude Code, without downloading the Skill repository a second time.
+- Made `tier0 skills update` resynchronize independently updated local Skills to detected agents while preserving the local update when Node.js is unavailable.
+- Added npm release preflight checks for tests, package contents, and authentication before creating a GitHub Release, plus a `prepublishOnly` test guard for direct npm publishing.
+- Fixed release packaging to use the sibling `Tier0-skill` checkout, exclude nested Git metadata and unreferenced protocol source snapshots, and fail before publishing when Skill assets are missing.
+- Fixed `tier0 uninstall` on Windows by scheduling removal of the running executable after the command exits.
+- Fixed Windows npm-wrapper Skill installation and removal by invoking `npx` through the shell from the local Skill directory.
+- Added a shared `--dry-run` request-preview contract for raw API, UNS mutation, and Flow mutation operations.
+- Made high-risk delete, restore, and deploy requests previewable without credentials or `--yes`.
+- Added structured validation error `subtype` and `param` fields while preserving lower-level error causes.
+- Rejected conflicting Flow flags, invalid UNS QoS values, invalid positional IDs, and no-op update requests locally.
+- Stopped silently rewriting malformed JSON and now require valid JSON for raw API bodies and Flow templates.
 - Fixed npm-based upgrades on macOS by repairing quarantine/signing state after installing the downloaded binary.
 - Added post-npm-upgrade binary verification so `tier0 upgrade` fails clearly if the installed CLI cannot run.
 - Changed `tier0 flow data --out` to write a deployable Node-RED `flows` array instead of the full API envelope.

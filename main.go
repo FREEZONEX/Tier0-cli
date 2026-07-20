@@ -28,13 +28,34 @@ func main() {
 		// "unknown flag" messages), emit a plain-text fallback so the user
 		// is not left silent, then exit 2 (validation).
 		cat := cmdutil.CategoryOf(err)
-		if cat == errs.CategoryAPI {
+		if !cmdutil.IsClassified(err) {
 			// Unclassified error: likely a Cobra flag/subcommand error that never
-			// went through HandleCommandError. Print it and exit 2.
-			fmt.Fprintln(os.Stderr, err)
+			// went through HandleCommandError. Classify it as invalid input.
+			if cmd.JSONMode() || jsonRequested(os.Args[1:]) {
+				validationErr := errs.InvalidArgument("command", err.Error())
+				fmt.Fprintln(os.Stderr, errs.BuildEnvelope(validationErr).Format())
+			} else {
+				fmt.Fprintln(os.Stderr, err)
+			}
 			os.Exit(2)
 		}
 
 		os.Exit(errs.ExitCode(cat))
 	}
+}
+
+func jsonRequested(args []string) bool {
+	requested := false
+	for _, arg := range args {
+		if arg == "--" {
+			break
+		}
+		switch arg {
+		case "--json", "--json=true":
+			requested = true
+		case "--json=false":
+			requested = false
+		}
+	}
+	return requested
 }

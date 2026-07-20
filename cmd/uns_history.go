@@ -96,7 +96,6 @@ func parseTimeToISO(expr string) (string, error) {
 }
 
 func runUnsHistory(cmd *cobra.Command, args []string) error {
-	checker := notice.Start()
 	jsonMode, _ := cmd.Flags().GetBool("json")
 	debug, _ := cmd.Flags().GetBool("debug")
 	topics, _ := cmd.Flags().GetStringSlice("topic")
@@ -110,11 +109,17 @@ func runUnsHistory(cmd *cobra.Command, args []string) error {
 
 	startTime, err := parseTimeToISO(startExpr)
 	if err != nil {
-		return fmt.Errorf("--start: %w", err)
+		return invalidArgumentCause(cmd, "--start", err.Error(), err)
 	}
 	endTime, err := parseTimeToISO(endExpr)
 	if err != nil {
-		return fmt.Errorf("--end: %w", err)
+		return invalidArgumentCause(cmd, "--end", err.Error(), err)
+	}
+	if page < 1 {
+		return invalidArgument(cmd, "--page", "--page must be at least 1")
+	}
+	if size < 1 {
+		return invalidArgument(cmd, "--size", "--size must be at least 1")
 	}
 
 	payload := map[string]any{
@@ -139,6 +144,7 @@ func runUnsHistory(cmd *cobra.Command, args []string) error {
 	}
 
 	body := cmdutil.JSONString(payload)
+	checker := notice.Start()
 	resp, err := cmdutil.DoAPI(cmd.Context(), "/openapi/v1/uns/history", "POST", body, debug)
 	if err != nil {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)

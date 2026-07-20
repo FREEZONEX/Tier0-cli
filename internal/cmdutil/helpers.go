@@ -70,6 +70,26 @@ func CategoryOf(err error) errs.Category {
 	return errs.CategoryAPI
 }
 
+// IsClassified reports whether an error already belongs to the CLI's stable
+// error taxonomy. CategoryAPI alone cannot distinguish a real APIError from an
+// unclassified Cobra error, so main uses this check before selecting fallback
+// behavior.
+func IsClassified(err error) bool {
+	if err == nil {
+		return false
+	}
+	var ce *errs.CLIError
+	if errors.As(err, &ce) {
+		return true
+	}
+	var ae *apierr.APIError
+	if errors.As(err, &ae) {
+		return true
+	}
+	var hre *highrisk.HighRiskError
+	return errors.As(err, &hre)
+}
+
 // HandleCommandError writes a structured error to stderr and returns the error
 // unchanged so the caller can propagate it up the Cobra RunE chain.
 //

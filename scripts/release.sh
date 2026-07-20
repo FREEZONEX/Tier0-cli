@@ -22,8 +22,17 @@ BUILD_DIR="${ROOT}/dist/release-${VERSION}"
 RELEASE_DIR="${BUILD_DIR}/packages"
 PARALLEL="${PARALLEL:-8}"
 
-# Skill source directory, normally a sibling checkout.
-SKILL_SRC="${ROOT}/../skill"
+# Skill source directory, normally the sibling Tier0-skill checkout.
+# SKILL_SRC can override this in release automation.
+SKILL_SRC="${SKILL_SRC:-${ROOT}/../Tier0-skill}"
+if [[ ! -f "${SKILL_SRC}/SKILL.md" && -f "${ROOT}/../skill/SKILL.md" ]]; then
+  SKILL_SRC="${ROOT}/../skill"
+fi
+if [[ ! -f "${SKILL_SRC}/SKILL.md" ]]; then
+  echo "[release] error: Tier0 Skill source not found at ${SKILL_SRC}" >&2
+  echo "[release] check out FREEZONEX/Tier0-skill beside Tier0-cli or set SKILL_SRC" >&2
+  exit 1
+fi
 
 # Excluded platforms that are not native or not needed.
 EXCLUDE_PLATFORMS="js/wasm wasip1/wasm android/386 android/amd64 android/arm android/arm64 ios/amd64 ios/arm64"
@@ -138,6 +147,13 @@ build_one() {
         cp "$item" "${platform_dir}/skill/"
       fi
     done
+
+    # Exclude maintainer-only protocol implementation snapshots. The runtime
+    # Skill uses the lightweight documents under flow/references/protocols.
+    rm -rf -- "${platform_dir}/skill/flow/references/protocal"
+
+    # Never ship nested Git repositories from reference projects.
+    find "${platform_dir}/skill" -type d -name .git -prune -exec rm -rf {} +
 
     # Write skills version metadata.
     printf '{\n  "version": "%s",\n  "updatedAt": "%s"\n}\n' \
@@ -344,41 +360,71 @@ release_github() {
 # ========================================
 # npm publish
 # ========================================
-release_npm() {
+npm_with_auth() {
+  local npm_dir="$1"
+  shift
+
+  if [[ -z "${NPM_TOKEN:-}" ]]; then
+    (cd "${npm_dir}" && npm "$@")
+    return
+  fi
+
+  local userconfig
+  userconfig=$(mktemp)
+  printf '%s\n' "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > "${userconfig}"
+  (
+    cd "${npm_dir}"
+    NPM_CONFIG_USERCONFIG="${userconfig}" npm "$@"
+  )
+  local status=$?
+  rm -f "${userconfig}"
+  return "${status}"
+}
+
+prepare_npm() {
   local npm_dir="${ROOT}/npm-wrapper"
 
   if [[ ! -f "${npm_dir}/package.json" ]]; then
-    echo "[npm] npm-wrapper/package.json does not exist; skipping npm publish"
+    echo "[npm] npm-wrapper/package.json does not exist"
+    return 1
+  fi
+
+  if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+    echo "[npm] node and npm are required for release preflight"
     return 1
   fi
 
   # Sync package.json version without the v prefix.
   # Use cd plus relative paths to avoid Git Bash Unix path parsing issues on Windows Node.js.
   local semver="${VERSION#v}"
-  if command -v node >/dev/null 2>&1; then
-    (cd "${npm_dir}" && node -e "
-      const fs = require('fs');
-      const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
-      pkg.version = '${semver}';
-      fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
-      console.log('[npm] package.json version → ' + pkg.version);
-    ")
-  else
-    echo "[npm] node not found; skipping version sync"
-  fi
+  (cd "${npm_dir}" && node -e "
+    const fs = require('fs');
+    const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
+    pkg.version = '${semver}';
+    fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
+    console.log('[npm] package.json version -> ' + pkg.version);
+  ")
 
-  # Check npm auth state; requires npm login or NPM_TOKEN.
-  # Run operations in a subshell after cd to avoid path conversion issues.
+  echo "[npm] Running tests..."
+  (cd "${npm_dir}" && npm test)
+
+  echo "[npm] Validating package contents..."
+  (cd "${npm_dir}" && npm pack --dry-run --json >/dev/null)
+
+  echo "[npm] Verifying publish authentication..."
+  if ! npm_with_auth "${npm_dir}" whoami >/dev/null; then
+    echo "[npm] Authentication check failed. Run npm login or set NPM_TOKEN."
+    return 1
+  fi
+  echo "[npm] Preflight passed for @tier0/cli@${semver}"
+}
+
+release_npm() {
+  local npm_dir="${ROOT}/npm-wrapper"
+  local semver="${VERSION#v}"
+
   echo "[npm] Publishing @tier0/cli@${semver} ..."
-  if (
-    cd "${npm_dir}"
-    if [[ -n "${NPM_TOKEN:-}" ]]; then
-      echo "[npm] Authenticating with NPM_TOKEN..."
-      echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc
-    fi
-    trap 'rm -f .npmrc' EXIT
-    npm publish --access public
-  ); then
+  if npm_with_auth "${npm_dir}" publish --access public; then
     echo "[npm] Published: https://www.npmjs.com/package/@tier0/cli"
   else
     echo "[npm] Publish failed; check:"
@@ -394,19 +440,29 @@ echo "  Publish stage"
 echo "========================================"
 echo ""
 
+if ! prepare_npm; then
+  echo ""
+  echo "[release] npm preflight failed; nothing was published"
+  exit 1
+fi
+
 GITHUB_OK=0
 if release_github; then
   GITHUB_OK=1
 else
   echo ""
   echo "[release] GitHub Release failed; skipping npm publish because the version is not ready"
+  exit 1
 fi
 
 echo ""
 
 # Run npm publish only after GitHub Release succeeds.
 if [[ "${GITHUB_OK}" == "1" ]]; then
-  release_npm || true
+  if ! release_npm; then
+    echo "[release] npm publish failed; GitHub assets exist but the release is incomplete"
+    exit 1
+  fi
 fi
 
 echo ""

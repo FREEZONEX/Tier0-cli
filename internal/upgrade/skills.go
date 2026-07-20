@@ -45,11 +45,13 @@ type SkillsListResult struct {
 
 // SkillsUpdateResult is the skills update result.
 type SkillsUpdateResult struct {
-	CurrentVersion string `json:"currentVersion"`
-	LatestVersion  string `json:"latestVersion"`
-	UpToDate       bool   `json:"upToDate"`
-	UpdatedCount   int    `json:"updatedCount,omitempty"`
-	ErrorMessage   string `json:"error,omitempty"`
+	CurrentVersion  string `json:"currentVersion"`
+	LatestVersion   string `json:"latestVersion"`
+	UpToDate        bool   `json:"upToDate"`
+	UpdatedCount    int    `json:"updatedCount,omitempty"`
+	ErrorMessage    string `json:"error,omitempty"`
+	AgentSyncStatus string `json:"agentSyncStatus,omitempty"`
+	AgentSyncError  string `json:"agentSyncError,omitempty"`
 }
 
 // FindSkillsDir locates the local skills directory.

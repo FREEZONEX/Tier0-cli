@@ -30,10 +30,10 @@ func init() {
 	unsWriteCmd.Flags().Bool("retain", false,
 		"Set MQTT retain flag")
 	unsWriteCmd.MarkFlagRequired("topic")
+	addDryRunFlag(unsWriteCmd)
 }
 
 func runUnsWrite(cmd *cobra.Command, args []string) error {
-	checker := notice.Start()
 	jsonMode, _ := cmd.Flags().GetBool("json")
 	debug, _ := cmd.Flags().GetBool("debug")
 	topic, _ := cmd.Flags().GetString("topic")
@@ -42,27 +42,31 @@ func runUnsWrite(cmd *cobra.Command, args []string) error {
 	qos, _ := cmd.Flags().GetInt("qos")
 	retain, _ := cmd.Flags().GetBool("retain")
 
+	if cmd.Flags().Changed("value") && cmd.Flags().Changed("file") {
+		return invalidArgument(cmd, "--value/--file", "--value and --file are mutually exclusive")
+	}
+	if qos < 0 || qos > 2 {
+		return invalidArgument(cmd, "--qos", "--qos must be 0, 1, or 2")
+	}
+
 	if file != "" {
-		if value != "" {
-			return fmt.Errorf(
-				"--value and --file are mutually exclusive",
-			)
-		}
 		raw, err := os.ReadFile(file)
 		if err != nil {
-			return fmt.Errorf("failed to read file: %w", err)
+			return fileIOError(cmd, "--file", "read value file", file, err)
 		}
 		value = string(raw)
 	}
 	if value == "" {
-		return fmt.Errorf(
-			"specify a value via --value '<json>' or --file <path>",
-		)
+		return invalidArgument(cmd, "--value/--file", "specify a value via --value '<json>' or --file <path>")
 	}
 
 	var valueObj any
 	if err := json.Unmarshal([]byte(value), &valueObj); err != nil {
-		return fmt.Errorf("invalid JSON value: %w", err)
+		param := "--value"
+		if file != "" {
+			param = "--file"
+		}
+		return invalidArgumentCause(cmd, param, "value must be valid JSON: "+err.Error(), err)
 	}
 
 	writeItem := map[string]any{
@@ -79,7 +83,11 @@ func runUnsWrite(cmd *cobra.Command, args []string) error {
 	if retain {
 		payload["retain"] = true
 	}
+	if handled, err := writeDryRun(cmd, "POST", "/openapi/v1/uns/write", payload); handled {
+		return err
+	}
 
+	checker := notice.Start()
 	body := cmdutil.JSONString(payload)
 
 	resp, err := cmdutil.DoAPI(cmd.Context(), "/openapi/v1/uns/write", "POST", body, debug)

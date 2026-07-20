@@ -12,7 +12,7 @@ async function main() {
 
   // `npx @tier0/cli@latest install` — explicit install/upgrade command
   if (args[0] === 'install') {
-    await install({ force: true });
+    await install({ force: true, requireSkills: true });
     process.exit(0);
   }
 

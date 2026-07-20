@@ -6,7 +6,10 @@ set -euo pipefail
 # Example: bash scripts/package-skill.sh ./dist/skills --version v0.2.0
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SKILL_SRC="${ROOT}/../skill"
+SKILL_SRC="${SKILL_SRC:-${ROOT}/../Tier0-skill}"
+if [[ ! -f "${SKILL_SRC}/SKILL.md" && -f "${ROOT}/../skill/SKILL.md" ]]; then
+  SKILL_SRC="${ROOT}/../skill"
+fi
 OUT_DIR="${1:-${ROOT}/dist/skills}"
 SKILL_VERSION="${SKILL_VERSION:-0.0.0-dev}"
 
@@ -43,10 +46,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ ! -d "${SKILL_SRC}" ]]; then
+if [[ ! -f "${SKILL_SRC}/SKILL.md" ]]; then
   echo "[package-skill] error: skill source not found at ${SKILL_SRC}" >&2
-  echo "[package-skill] make sure the skill submodule is initialized:" >&2
-  echo "  git submodule update --init skill" >&2
+  echo "[package-skill] check out FREEZONEX/Tier0-skill beside Tier0-cli or set SKILL_SRC" >&2
   exit 1
 fi
 
@@ -69,6 +71,14 @@ for item in "${SKILL_SRC}"/*; do
     cp "$item" "${OUT_DIR}/"
   fi
 done
+
+# The Skill source checkout also contains complete protocol implementation
+# snapshots for maintainer reference. They are not referenced by Skill docs and
+# must not be shipped to users.
+rm -rf -- "${OUT_DIR}/flow/references/protocal"
+
+# Never ship nested Git repositories from reference projects.
+find "${OUT_DIR}" -type d -name .git -prune -exec rm -rf {} +
 
 # Write metadata.
 cat > "${OUT_DIR}/_meta.json" << EOF

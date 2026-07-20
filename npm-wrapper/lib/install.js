@@ -9,6 +9,7 @@ const { execFileSync, execSync, spawn } = require('child_process');
 const REPO = 'FREEZONEX/Tier0-cli';
 const BIN_DIR = path.join(require('os').homedir(), '.tier0', 'bin');
 const VERSION_FILE = path.join(BIN_DIR, '.version');
+const SKILLS_DIR = path.join(require('os').homedir(), '.tier0', 'skills');
 
 // Read the version directly from package.json and keep it in sync with the Go release, following the Lark CLI approach.
 // Do not call the GitHub API for latest; this avoids stale GitHub Release metadata installing an old version.
@@ -182,6 +183,21 @@ function runBestEffort(command, args) {
   }
 }
 
+function runCommand(command, args, options) {
+  if (process.platform === 'win32') {
+    return execSync([command, ...args].join(' '), options);
+  }
+  return execFileSync(command, args, options);
+}
+
+function buildSkillsInstallArgs() {
+  return ['-y', '--package=skills', '--', 'skills', 'add', '.', '-y', '-g', '--copy'];
+}
+
+function isNpxPostinstall(env = process.env) {
+  return env.npm_command === 'exec' && env.TIER0_CLI_RUN !== '1';
+}
+
 function fixMacOSSigning(binaryPath) {
   if (process.platform !== 'darwin') {
     return;
@@ -209,24 +225,31 @@ function verifyInstalledBinary(binaryPath, expectedVersion) {
   }
 }
 
-async function install({ force = false } = {}) {
+async function install({
+  force = false,
+  requireSkills = false,
+  installAgentSkills = installSkills,
+  binDir = BIN_DIR,
+  versionFile = VERSION_FILE,
+} = {}) {
   const plat = platformName();
   const version = VERSION;  // always use npm package version — in sync with Go release
-  const binPath = path.join(BIN_DIR, binaryName());
+  const binPath = path.join(binDir, binaryName());
 
   // Check if already installed and up to date (skip when force=true)
-  if (!force && fs.existsSync(binPath) && fs.existsSync(VERSION_FILE)) {
-    const current = fs.readFileSync(VERSION_FILE, 'utf8').trim();
+  if (!force && fs.existsSync(binPath) && fs.existsSync(versionFile)) {
+    const current = fs.readFileSync(versionFile, 'utf8').trim();
     if (current === version) {
       console.log(`tier0 ${version} already installed.`);
+      await installAgentSkills({ required: requireSkills });
       return;
     }
   }
 
   console.log(`Installing tier0 ${version} for ${plat}...`);
 
-  if (!fs.existsSync(BIN_DIR)) {
-    fs.mkdirSync(BIN_DIR, { recursive: true });
+  if (!fs.existsSync(binDir)) {
+    fs.mkdirSync(binDir, { recursive: true });
   }
 
   const suffix = process.platform === 'win32' ? 'zip' : 'tar.gz';
@@ -279,16 +302,15 @@ async function install({ force = false } = {}) {
     }
     fixMacOSSigning(binPath);
     verifyInstalledBinary(binPath, version);
-    fs.writeFileSync(VERSION_FILE, version);
+    fs.writeFileSync(versionFile, version);
 
     // Install skills documentation.
     const foundSkillDir = findSkillDir(extractDir);
     if (foundSkillDir) {
-      const skillsDest = path.join(require('os').homedir(), '.tier0', 'skills');
-      if (fs.existsSync(skillsDest)) {
-        fs.rmSync(skillsDest, { recursive: true, force: true });
+      if (fs.existsSync(SKILLS_DIR)) {
+        fs.rmSync(SKILLS_DIR, { recursive: true, force: true });
       }
-      copyDirSync(foundSkillDir, skillsDest);
+      copyDirSync(foundSkillDir, SKILLS_DIR);
     }
 
     // Cleanup
@@ -301,27 +323,54 @@ async function install({ force = false } = {}) {
     process.exit(1);
   }
 
-  // Install Cursor/Claude agent skills
-  await installSkills();
+  // Install agent skills globally for detected tools such as Codex and Claude.
+  await installAgentSkills({ required: requireSkills });
 }
 
-async function installSkills() {
+async function installSkills({
+  required = false,
+  runner = runCommand,
+  skillsDir = SKILLS_DIR,
+} = {}) {
   console.log('\nInstalling Tier0 agent skills...');
   try {
-    execSync('npx --yes skills add FREEZONEX/Tier0-skill', { stdio: 'inherit' });
+    if (!fs.existsSync(path.join(skillsDir, 'SKILL.md'))) {
+      throw new Error(`local Skill package not found: ${skillsDir}`);
+    }
+    runner('npx', buildSkillsInstallArgs(), { stdio: 'inherit', cwd: skillsDir });
     console.log('✓ Tier0 agent skills installed.');
   } catch (err) {
+    if (required) {
+      throw new Error(`Tier0 agent skills installation failed: ${err.message}`);
+    }
     console.warn(`⚠ Skills installation failed (non-fatal): ${err.message}`);
-    console.warn('  You can install manually: npx skills add FREEZONEX/Tier0-skill');
+    console.warn(`  You can install manually: npx -y skills add "${skillsDir}" -y -g --copy`);
+    return false;
   }
 }
 
 // Run install if called directly
 if (require.main === module) {
-  install().catch(err => {
-    console.error(err);
-    process.exit(1);
-  });
+  // Match the Lark CLI pattern: under npx, let bin/tier0 run the explicit
+  // installer once instead of downloading the binary twice in postinstall.
+  if (isNpxPostinstall()) {
+    process.exit(0);
+  } else {
+    install().catch(err => {
+      console.error(err);
+      process.exit(1);
+    });
+  }
 }
 
-module.exports = { install, BIN_DIR, binaryName };
+module.exports = {
+  install,
+  installSkills,
+  buildSkillsInstallArgs,
+  isNpxPostinstall,
+  BIN_DIR,
+  VERSION_FILE,
+  SKILLS_DIR,
+  VERSION,
+  binaryName,
+};

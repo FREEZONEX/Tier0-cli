@@ -3,12 +3,10 @@ package client
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
@@ -34,12 +32,12 @@ func New(baseURL, apiKey string) *Client {
 
 // DoAPI calls an API endpoint.
 func (c *Client) DoAPI(ctx context.Context, endpoint, method, body string, debug bool) (string, error) {
-	if method == "" {
-		method = http.MethodPost
+	if strings.TrimSpace(method) == "" {
+		return "", errs.New(errs.CategoryInternal, 0, "request method is empty").
+			WithSubtype(errs.SubtypeFailedPrecondition)
 	}
 
 	url := c.baseURL + endpoint
-	body = fixJSON(body)
 	var bodyReader io.Reader
 	if body != "" {
 		bodyReader = bytes.NewReader([]byte(body))
@@ -102,38 +100,6 @@ func (c *Client) DoAPI(ctx context.Context, endpoint, method, body string, debug
 	}
 
 	return string(respBody), nil
-}
-
-// fixJSON attempts to repair JSON with missing quotes, which commonly happens
-// in shells such as PowerShell. For example, {path:/} becomes {"path":"/"}.
-func fixJSON(body string) string {
-	trimmed := strings.TrimSpace(body)
-	if trimmed == "" {
-		return body
-	}
-	// Already valid JSON; no repair needed.
-	if json.Valid([]byte(trimmed)) {
-		return trimmed
-	}
-
-	// Repair objects by quoting unquoted keys and string values.
-	// Step 1: quote keys, for example {key: becomes {"key":
-	keyRe := regexp.MustCompile(`([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:`)
-	fixed := keyRe.ReplaceAllString(trimmed, `$1"$2":`)
-
-	// Step 2: quote unquoted string values, excluding numbers, booleans, and null.
-	valRe := regexp.MustCompile(`(:\s*)([^"{}\[\],\s\d][^,}\]]*)([,}\]])`)
-	fixed = valRe.ReplaceAllString(fixed, `$1"$2"$3`)
-
-	// Step 3: handle unquoted strings in arrays.
-	arrValRe := regexp.MustCompile(`([,\[]\s*)([^"{}\[\],\s\d][^,\]]*)([,\]])`)
-	fixed = arrValRe.ReplaceAllString(fixed, `$1"$2"$3`)
-
-	// Fallback: return the original value if the repaired result is still invalid.
-	if json.Valid([]byte(fixed)) {
-		return fixed
-	}
-	return trimmed
 }
 
 func min(a, b int) int {
