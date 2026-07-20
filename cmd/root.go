@@ -56,6 +56,7 @@ func init() {
 	rootCmd.AddCommand(authCmd)
 	rootCmd.AddCommand(flowCmd)
 	rootCmd.AddCommand(unsCmd)
+	rootCmd.AddCommand(assetsCmd)
 
 	// Version is handled inline since it's trivial.
 	rootCmd.AddCommand(&cobra.Command{
