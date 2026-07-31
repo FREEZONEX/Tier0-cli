@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/apierr"
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
@@ -64,8 +62,9 @@ func runAssetsUpload(cmd *cobra.Command, args []string) error {
 	if info.IsDir() {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("path is a directory"), jsonMode)
 	}
-	if info.Size() <= 0 || info.Size() > 10<<20 {
-		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("file size must be 0 < size <= 10MB, got %d", info.Size()), jsonMode)
+	// 文件大小上限与配额由服务端按套餐裁定，CLI 不做大小硬校验；仅保留空文件友好预检
+	if info.Size() <= 0 {
+		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("file is empty"), jsonMode)
 	}
 
 	business, _ := cmd.Flags().GetString("business")
@@ -127,21 +126,31 @@ func runAssetsUpload(cmd *cobra.Command, args []string) error {
 }
 
 func putFileToURL(ctx context.Context, uploadURL, localPath, contentType string, debug bool) error {
-	data, err := os.ReadFile(localPath)
+	// 流式上传：以文件为请求体，避免整文件读入内存，支持大文件
+	f, err := os.Open(localPath)
 	if err != nil {
-		return fmt.Errorf("read file: %w", err)
+		return fmt.Errorf("open file: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, uploadURL, bytes.NewReader(data))
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("stat file: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, uploadURL, f)
 	if err != nil {
 		return fmt.Errorf("build put request: %w", err)
 	}
 	req.Header.Set("Content-Type", contentType)
-	req.ContentLength = int64(len(data))
+	req.ContentLength = info.Size()
 
 	if debug {
-		fmt.Fprintf(os.Stderr, "[debug] PUT %s (body %d bytes)\n", uploadURL, len(data))
+		fmt.Fprintf(os.Stderr, "[debug] PUT %s (body %d bytes)\n", uploadURL, info.Size())
 	}
-	client := &http.Client{Timeout: 60 * time.Second}
+	// 大文件流式上传不设置客户端总超时：固定超时会中断慢速但正常的大文件上传。
+	// 取消通过请求 context（cmd.Context()，响应 Ctrl-C）传递，与仓库其他 HTTP 调用一致。
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("put file: %w", err)
