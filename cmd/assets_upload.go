@@ -24,12 +24,20 @@ var assetsUploadCmd = &cobra.Command{
 	Short: "Upload a file to Tier0 object storage",
 	Long: `Upload a local file to Tier0 object storage.
 
-The command first requests a presigned POST URL and form fields from the backend, then uploads the file content directly to S3/RustFS with a multipart/form-data POST.
+Files larger than 100MB are uploaded with multipart chunked upload: the CLI
+requests a presigned upload URL per chunk, uploads chunks directly to the
+object store with configurable concurrency, then completes the upload.
+Interrupted uploads keep a local resume state file and can be continued with
+--resume, or discarded with --abort.
 
 Examples:
   tier0 assets upload ./report.csv
   tier0 assets upload ./report.csv --visibility public --business attachment
-  tier0 assets upload ./report.csv --use-by workspace --visibility private`,
+  tier0 assets upload ./report.csv --use-by workspace --visibility private
+  tier0 assets upload ./large-backup.tar.gz
+  tier0 assets upload ./large-backup.tar.gz --resume
+  tier0 assets upload ./large-backup.tar.gz --abort
+  tier0 assets upload ./large-backup.tar.gz --multipart-size 20MB --concurrency 8`,
 	Args: cobra.ExactArgs(1),
 	RunE: runAssetsUpload,
 }
@@ -40,6 +48,12 @@ func init() {
 	assetsUploadCmd.Flags().String("visibility", "private", "Visibility: public|private")
 	assetsUploadCmd.Flags().String("app-instance-id", "", "AI app instance ID")
 	assetsUploadCmd.Flags().String("session-id", "", "AI session ID")
+	// multipart 分片直传相关（>100MB 自动启用）
+	assetsUploadCmd.Flags().String("multipart-size", fmt.Sprintf("%dMB", defaultMultipartSize/(1<<20)),
+		"Multipart part size (e.g. 10MB, min 5MB)")
+	assetsUploadCmd.Flags().Int("concurrency", 4, "Multipart upload concurrency (number of parallel parts)")
+	assetsUploadCmd.Flags().Bool("resume", false, "Resume an interrupted multipart upload")
+	assetsUploadCmd.Flags().Bool("abort", false, "Abort an interrupted multipart upload and clean up its state")
 }
 
 type assetsUploadResponse struct {
@@ -77,6 +91,22 @@ func runAssetsUpload(cmd *cobra.Command, args []string) error {
 	visibility, _ := cmd.Flags().GetString("visibility")
 	appInstanceID, _ := cmd.Flags().GetString("app-instance-id")
 	sessionID, _ := cmd.Flags().GetString("session-id")
+
+	resume, _ := cmd.Flags().GetBool("resume")
+	abort, _ := cmd.Flags().GetBool("abort")
+
+	// 大文件（>100MB）自动分片直传；存在断点状态或显式 --resume/--abort 也走 multipart 流程
+	if info.Size() > multipartThreshold || resume || abort || multipartStateExists(localPath) {
+		return runMultipartUpload(cmd, localPath, info, multipartOptions{
+			business:      business,
+			useBy:         useBy,
+			visibility:    visibility,
+			appInstanceID: appInstanceID,
+			sessionID:     sessionID,
+			resume:        resume,
+			abort:         abort,
+		})
+	}
 
 	fileName := filepath.Base(localPath)
 	contentType := mimeTypeByExtension(filepath.Ext(fileName))
