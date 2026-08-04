@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
-	"time"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/apierr"
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
@@ -22,7 +24,7 @@ var assetsUploadCmd = &cobra.Command{
 	Short: "Upload a file to Tier0 object storage",
 	Long: `Upload a local file to Tier0 object storage.
 
-The command first requests a presigned PUT URL from the backend, then uploads the file content directly to S3/RustFS.
+The command first requests a presigned POST URL and form fields from the backend, then uploads the file content directly to S3/RustFS with a multipart/form-data POST.
 
 Examples:
   tier0 assets upload ./report.csv
@@ -44,11 +46,12 @@ type assetsUploadResponse struct {
 	Code int    `json:"code"`
 	Msg  string `json:"msg"`
 	Data struct {
-		FileID    int64  `json:"fileId"`
-		FilePath  string `json:"filePath"`
-		FileURL   string `json:"fileUrl"`
-		UploadURL string `json:"uploadUrl"`
-		ExpiresAt int64  `json:"expiresAt"`
+		FileID     int64             `json:"fileId"`
+		FilePath   string            `json:"filePath"`
+		FileURL    string            `json:"fileUrl"`
+		PostURL    string            `json:"postUrl"`
+		PostFields map[string]string `json:"postFields"`
+		ExpiresAt  int64             `json:"expiresAt"`
 	} `json:"data"`
 }
 
@@ -64,8 +67,9 @@ func runAssetsUpload(cmd *cobra.Command, args []string) error {
 	if info.IsDir() {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("path is a directory"), jsonMode)
 	}
-	if info.Size() <= 0 || info.Size() > 10<<20 {
-		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("file size must be 0 < size <= 10MB, got %d", info.Size()), jsonMode)
+	// 文件大小上限与配额由服务端按套餐裁定，CLI 不做大小硬校验；仅保留空文件友好预检
+	if info.Size() <= 0 {
+		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("file is empty"), jsonMode)
 	}
 
 	business, _ := cmd.Flags().GetString("business")
@@ -101,11 +105,11 @@ func runAssetsUpload(cmd *cobra.Command, args []string) error {
 	if uploadResp.Code != 0 && uploadResp.Code != 200 {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), apierr.New(uploadResp.Code, resp), jsonMode)
 	}
-	if uploadResp.Data.UploadURL == "" || uploadResp.Data.FilePath == "" {
-		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("invalid upload response: missing uploadUrl or filePath"), jsonMode)
+	if uploadResp.Data.PostURL == "" || uploadResp.Data.FilePath == "" {
+		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("invalid upload response: missing postUrl or filePath"), jsonMode)
 	}
 
-	if err := putFileToURL(cmd.Context(), uploadResp.Data.UploadURL, localPath, contentType, debug); err != nil {
+	if err := postFileToURL(cmd.Context(), uploadResp.Data.PostURL, uploadResp.Data.PostFields, localPath, contentType, debug); err != nil {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
 	}
 
@@ -126,30 +130,67 @@ func runAssetsUpload(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func putFileToURL(ctx context.Context, uploadURL, localPath, contentType string, debug bool) error {
-	data, err := os.ReadFile(localPath)
+func postFileToURL(ctx context.Context, postURL string, postFields map[string]string, localPath, contentType string, debug bool) error {
+	// 流式 multipart/form-data：postFields 与 file part header 拼进头部缓冲，
+	// 文件内容以 io.MultiReader 拼接，避免整文件读入内存，支持大文件
+	f, err := os.Open(localPath)
 	if err != nil {
-		return fmt.Errorf("read file: %w", err)
+		return fmt.Errorf("open file: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, uploadURL, bytes.NewReader(data))
+	defer f.Close()
+
+	info, err := f.Stat()
 	if err != nil {
-		return fmt.Errorf("build put request: %w", err)
+		return fmt.Errorf("stat file: %w", err)
 	}
-	req.Header.Set("Content-Type", contentType)
-	req.ContentLength = int64(len(data))
+
+	// 1) postFields 全部先写入表单（按键排序，输出确定）；
+	// 2) file 字段必须最后 appended：对象存储签名校验对字段顺序敏感，file 之后不得再有字段。
+	var head bytes.Buffer
+	mw := multipart.NewWriter(&head)
+	keys := make([]string, 0, len(postFields))
+	for k := range postFields {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if err := mw.WriteField(k, postFields[k]); err != nil {
+			return fmt.Errorf("write form field %s: %w", k, err)
+		}
+	}
+	// file part header（Content-Type 由 CLI 按扩展名推断；不额外添加 Content-Type 表单字段）
+	partHeader := make(textproto.MIMEHeader)
+	partHeader.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename=%q`, filepath.Base(localPath)))
+	partHeader.Set("Content-Type", contentType)
+	if _, err := mw.CreatePart(partHeader); err != nil {
+		return fmt.Errorf("create file form field: %w", err)
+	}
+
+	// 收尾 boundary 与文件内容流式拼接
+	tail := fmt.Sprintf("\r\n--%s--\r\n", mw.Boundary())
+	body := io.MultiReader(bytes.NewReader(head.Bytes()), f, strings.NewReader(tail))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, postURL, body)
+	if err != nil {
+		return fmt.Errorf("build post request: %w", err)
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.ContentLength = int64(head.Len()) + info.Size() + int64(len(tail))
 
 	if debug {
-		fmt.Fprintf(os.Stderr, "[debug] PUT %s (body %d bytes)\n", uploadURL, len(data))
+		fmt.Fprintf(os.Stderr, "[debug] POST %s (multipart body %d bytes)\n", postURL, req.ContentLength)
 	}
-	client := &http.Client{Timeout: 60 * time.Second}
+	// 大文件流式上传不设置客户端总超时：固定超时会中断慢速但正常的大文件上传。
+	// 取消通过请求 context（cmd.Context()，响应 Ctrl-C）传递，与仓库其他 HTTP 调用一致。
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("put file: %w", err)
+		return fmt.Errorf("post file: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("put file failed: status=%d body=%s", resp.StatusCode, string(body))
+		bodyText, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("post file failed: status=%d body=%s", resp.StatusCode, string(bodyText))
 	}
 	return nil
 }

@@ -108,6 +108,12 @@ func New(httpStatus int, rawBody string) *APIError {
 // given HTTP status and error message.
 func hintFor(status int, msg string) (hint, cmd string) {
 	msgLower := strings.ToLower(msg)
+	// 存储配额超限（后端 CodeStorageQuotaExceeded / "storage quota" 关键字）：
+	// 提示删除文件或升级套餐。按消息关键字识别，兼容 status 为 HTTP 状态码
+	// 或后端业务码两种调用路径（assets upload 经 ResultVO 传入的是业务码）。
+	if strings.Contains(msgLower, "quota") {
+		return "Storage quota exceeded for your plan. Delete files or upgrade your plan.", ""
+	}
 	switch status {
 	case 401:
 		return "API Key is missing or expired. Re-authenticate.", "tier0 login"
