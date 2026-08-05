@@ -121,6 +121,9 @@ func hintFor(status int, msg string) (hint, cmd string) {
 		if strings.Contains(msgLower, "read") || strings.Contains(msgLower, "readonly") {
 			return "Your API Key does not have write permission. Use a key with write access.", ""
 		}
+		if strings.Contains(msgLower, "expired") {
+			return "Presigned upload URL expired. Re-run with --resume to continue.", ""
+		}
 		return "Access denied. Check Workspace permissions or use a different API Key.", "tier0 login"
 	case 404:
 		if strings.Contains(msgLower, "topic") {
@@ -136,6 +139,9 @@ func hintFor(status int, msg string) (hint, cmd string) {
 		}
 		if strings.Contains(msgLower, "api key") || strings.Contains(msgLower, "apikey") {
 			return "API Key not found in request. Run login first.", "tier0 login"
+		}
+		if strings.Contains(msgLower, "multipart") || strings.Contains(msgLower, "part size") {
+			return "Multipart upload request rejected. Check the part size and file size, then retry.", ""
 		}
 		return "Bad request. Check the request body parameters.", ""
 	case 500:
