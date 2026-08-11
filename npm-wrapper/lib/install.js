@@ -358,7 +358,7 @@ async function installSkills({
 
 // Run install if called directly
 if (require.main === module) {
-  // Match the Lark CLI pattern: under npx, let bin/tier0 run the explicit
+  // Match the Lark CLI pattern: under npx, let bin/tier0.js run the explicit
   // installer once instead of downloading the binary twice in postinstall.
   if (isNpxPostinstall()) {
     process.exit(0);

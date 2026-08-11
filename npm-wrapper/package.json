@@ -3,7 +3,7 @@
   "version": "0.6.5",
   "description": "Tier0 CLI — Unified Namespace data platform command line tool",
   "bin": {
-    "tier0": "./bin/tier0"
+    "tier0": "./bin/tier0.js"
   },
   "scripts": {
     "postinstall": "node lib/install.js",
@@ -19,7 +19,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/FREEZONEX/Tier0-cli.git"
+    "url": "git+https://github.com/FREEZONEX/Tier0-cli.git"
   },
   "keywords": [
     "tier0",
