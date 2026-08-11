@@ -27,7 +27,7 @@ async function main() {
   // Check if binary exists, if not install it
   if (!fs.existsSync(binPath)) {
     console.log('tier0 CLI not found, installing...');
-    await install();
+    await install({ requireSkills: true });
   }
 
   // Spawn the actual binary with all arguments

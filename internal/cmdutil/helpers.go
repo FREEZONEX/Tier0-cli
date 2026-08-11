@@ -179,7 +179,7 @@ func CheckResponse(resp string) error {
 	}
 	if err := json.Unmarshal([]byte(resp), &outer); err == nil {
 		if outer.Code != 0 && outer.Code != 200 {
-			return apierr.New(outer.Code, resp)
+			return apierr.NewBusiness(outer.Code, resp)
 		}
 	}
 

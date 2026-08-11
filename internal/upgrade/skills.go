@@ -226,16 +226,19 @@ func skillRepoLatestCommit() (string, error) {
 	return c.SHA[:8], nil // short SHA, 8 chars
 }
 
+var fetchSkillRepoLatestCommit = skillRepoLatestCommit
+
 // CheckSkillsUpdate checks for newer skills by comparing the latest Tier0-skill commit.
 func CheckSkillsUpdate(skillsDir string) (*SkillsUpdateResult, error) {
 	currentVer := GetSkillsVersion(skillsDir)
 
-	latestSHA, err := skillRepoLatestCommit()
+	latestSHA, err := fetchSkillRepoLatestCommit()
 	if err != nil {
-		return &SkillsUpdateResult{
+		result := &SkillsUpdateResult{
 			CurrentVersion: currentVer,
 			ErrorMessage:   err.Error(),
-		}, nil
+		}
+		return result, err
 	}
 
 	upToDate := currentVer == latestSHA

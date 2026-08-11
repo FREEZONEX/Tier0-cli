@@ -225,6 +225,11 @@ function verifyInstalledBinary(binaryPath, expectedVersion) {
   }
 }
 
+function printAuthNextStep() {
+  console.log('\nNext: verify authentication with `tier0 auth whoami --json`.');
+  console.log('If authentication is missing, run `tier0 login --no-wait --json` and open the returned verification_url.');
+}
+
 async function install({
   force = false,
   requireSkills = false,
@@ -242,6 +247,7 @@ async function install({
     if (current === version) {
       console.log(`tier0 ${version} already installed.`);
       await installAgentSkills({ required: requireSkills });
+      printAuthNextStep();
       return;
     }
   }
@@ -325,6 +331,7 @@ async function install({
 
   // Install agent skills globally for detected tools such as Codex and Claude.
   await installAgentSkills({ required: requireSkills });
+  printAuthNextStep();
 }
 
 async function installSkills({

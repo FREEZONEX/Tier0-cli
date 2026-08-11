@@ -1,6 +1,7 @@
 package cmdutil
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -16,6 +17,23 @@ func TestCheckResponseDetectsBusinessSuccessFalse(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "Plant/Metric/B") {
 		t.Fatalf("error = %q, want failed topic", err.Error())
+	}
+}
+
+func TestCheckResponseBusinessCodeIsNotHTTPRetryable(t *testing.T) {
+	err := CheckResponse(`{"code":100009,"msg":"not found"}`)
+	if err == nil {
+		t.Fatal("expected business error")
+	}
+	var apiErr *apierr.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected APIError, got %T", err)
+	}
+	if apiErr.ToEnvelope().Error.Retryable {
+		t.Fatal("business code must not be marked retryable as an HTTP 5xx")
+	}
+	if apiErr.ToEnvelope().Error.Code != 100009 {
+		t.Fatalf("business code = %d", apiErr.ToEnvelope().Error.Code)
 	}
 }
 

@@ -68,6 +68,13 @@ func runUnsWrite(cmd *cobra.Command, args []string) error {
 		}
 		return invalidArgumentCause(cmd, param, "value must be valid JSON: "+err.Error(), err)
 	}
+	if _, ok := valueObj.(map[string]any); !ok {
+		param := "--value"
+		if file != "" {
+			param = "--file"
+		}
+		return invalidArgument(cmd, param, "value must be a JSON object matching the topic fields")
+	}
 
 	writeItem := map[string]any{
 		"topic": topic,

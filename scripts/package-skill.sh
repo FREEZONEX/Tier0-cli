@@ -62,7 +62,9 @@ mkdir -p "${OUT_DIR}"
 # Copy all skill files, excluding .git and installer scripts.
 for item in "${SKILL_SRC}"/*; do
   name=$(basename "$item")
-  if [[ "$name" == ".git" || "$name" == "install-openclaw.sh" ]]; then
+  if [[ "$name" == ".git" || "$name" == "install-openclaw.sh" ||
+        "$name" == "README.md" || "$name" == "CHANGELOG.md" ||
+        "$name" == "_commit_msg.txt" ]]; then
     continue
   fi
   if [[ -d "$item" ]]; then

@@ -59,7 +59,7 @@ func runAssetsUrl(cmd *cobra.Command, args []string) error {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("parse url response: %w", err), jsonMode)
 	}
 	if urlResp.Code != 0 && urlResp.Code != 200 {
-		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), apierr.New(urlResp.Code, resp), jsonMode)
+		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), apierr.NewBusiness(urlResp.Code, resp), jsonMode)
 	}
 
 	result := map[string]any{

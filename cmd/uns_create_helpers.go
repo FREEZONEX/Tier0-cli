@@ -44,6 +44,78 @@ func parseNamespaceFile(raw []byte) ([]any, error) {
 	return arr, nil
 }
 
+// validateNamespaceTree catches request-shape errors locally so --dry-run is a
+// meaningful preflight rather than only a JSON syntax check. The create API
+// expects every node to use "name" (not "path"), and Metric topics must
+// declare at least one schema field.
+func validateNamespaceTree(namespace []any) error {
+	if len(namespace) == 0 {
+		return fmt.Errorf("namespace must contain at least one node")
+	}
+	return validateNamespaceNodes(namespace, nil, "namespace")
+}
+
+func validateNamespaceNodes(nodes []any, parents []string, location string) error {
+	for i, raw := range nodes {
+		itemLocation := fmt.Sprintf("%s[%d]", location, i)
+		node, ok := raw.(map[string]any)
+		if !ok {
+			return fmt.Errorf("%s must be a JSON object", itemLocation)
+		}
+
+		name, ok := node["name"].(string)
+		if !ok || strings.TrimSpace(name) == "" {
+			if _, hasPath := node["path"]; hasPath {
+				return fmt.Errorf("%s.name is required; use \"name\" for a node label, not \"path\"", itemLocation)
+			}
+			return fmt.Errorf("%s.name is required", itemLocation)
+		}
+
+		typeValue, ok := node["type"].(string)
+		if !ok || strings.TrimSpace(typeValue) == "" {
+			return fmt.Errorf("%s.type is required", itemLocation)
+		}
+		typeValue = strings.ToLower(strings.TrimSpace(typeValue))
+		isTopic := typeValue == "topic" || typeValue == "file" || typeValue == "object" ||
+			typeValue == "metric" || typeValue == "action" || typeValue == "state" || typeValue == "thing"
+		isPath := typeValue == "path" || typeValue == "folder" || typeValue == "directory" || typeValue == "dir"
+		if !isTopic && !isPath {
+			return fmt.Errorf("%s.type %q is invalid; use PATH or TOPIC", itemLocation, node["type"])
+		}
+
+		fullPath := strings.Join(append(append([]string{}, parents...), name), "/")
+		if isTopic {
+			topicType, err := deriveTopicType(fullPath)
+			if err != nil {
+				return fmt.Errorf("%s: %w", itemLocation, err)
+			}
+			if topicType == "METRIC" {
+				fields, ok := node["fields"].([]any)
+				if !ok || len(fields) == 0 {
+					return fmt.Errorf("%s.fields is required for Metric topic %q", itemLocation, fullPath)
+				}
+			}
+		}
+
+		if childrenRaw, exists := node["children"]; exists {
+			children, ok := childrenRaw.([]any)
+			if !ok {
+				return fmt.Errorf("%s.children must be a JSON array", itemLocation)
+			}
+			if isTopic && len(children) > 0 {
+				return fmt.Errorf("%s.children is not allowed on topic %q", itemLocation, fullPath)
+			}
+			if len(children) > 0 {
+				childParents := append(append([]string{}, parents...), name)
+				if err := validateNamespaceNodes(children, childParents, itemLocation+".children"); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // ── node type resolution ──────────────────────────────────────────────────────
 
 // typeFolders is the set of valid UNS type-folder names (lower-cased key → display name).
@@ -263,5 +335,11 @@ func buildNamespaceFromFlags(
 	}
 
 	namespace, err = wrapInFolderTree(fullPath, leaf)
-	return namespace, fullPath, err
+	if err != nil {
+		return nil, "", err
+	}
+	if err := validateNamespaceTree(namespace); err != nil {
+		return nil, "", err
+	}
+	return namespace, fullPath, nil
 }

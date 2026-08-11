@@ -7,10 +7,13 @@ Tier0 platform command-line tool.
 Recommended, cross-platform, requires Node.js >= 16:
 
 ```bash
-npx @tier0/cli@latest install
+npx -y @tier0/cli@latest install
 ```
 
 This installs the Go `tier0` binary into `~/.tier0/bin/`, extracts the matching versioned Skill into `~/.tier0/skills/`, and copies it globally to detected agents such as Codex, Claude Code, and Cursor.
+
+Then run `tier0 auth whoami --json`. If authentication is missing, run
+`tier0 login --no-wait --json` and open the returned `verification_url`.
 
 Skills can still be updated independently of the CLI. `tier0 skills update` downloads the latest `FREEZONEX/Tier0-skill` content into `~/.tier0/skills/` and resynchronizes detected agents.
 

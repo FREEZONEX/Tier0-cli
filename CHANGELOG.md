@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.6.5 - 2026-08-11
+
+- Added business-error validation to raw API, UNS browse/read/search/history, and Flow list/get/data commands so failed ResultVO responses return non-zero exit codes.
+- Separated Tier0 business codes from HTTP status codes so large business codes are not incorrectly marked retryable.
+- Enforced object-valued UNS writes and Metric schema fields during local create preflight, including batch namespace validation with clear `name` versus `path` errors.
+- Added `--fields-file` to UNS create/update and `--clear-description` to UNS update for shell-safe PowerShell workflows.
+- Made `config --json` return a stable redacted JSON object.
+- Made Skill update lookup failures return a command error instead of an exit-zero result containing an `error` field.
+- Added dry-run and explicit confirmation protection to object-storage deletion.
+- Made a clean npx bootstrap require Tier0 Agent Skill installation and print the post-install authentication check/login workflow.
+- Excluded repository-only README, changelog, and commit-message files from packaged Agent Skill assets.
+
 ## v0.6.4 - 2026-07-20
 
 - Made the npm installer deploy the versioned local Release Skill globally and non-interactively to detected agents such as Codex and Claude Code, without downloading the Skill repository a second time.

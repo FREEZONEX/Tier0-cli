@@ -24,6 +24,7 @@ func init() {
 }
 
 func runFlowData(cmd *cobra.Command, args []string) error {
+	jsonMode, _ := cmd.Flags().GetBool("json")
 	debug, _ := cmd.Flags().GetBool("debug")
 	id, _ := cmd.Flags().GetInt64("id")
 	outFile, _ := cmd.Flags().GetString("out")
@@ -43,7 +44,10 @@ func runFlowData(cmd *cobra.Command, args []string) error {
 	checker := notice.Start()
 	resp, err := cmdutil.DoAPI(cmd.Context(), "/openapi/v1/flow/flowdata", "POST", string(body), debug)
 	if err != nil {
-		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, true) // data always JSON error
+		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
+	}
+	if err := cmdutil.CheckResponse(resp); err != nil {
+		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
 	}
 
 	stdout := cmd.OutOrStdout()

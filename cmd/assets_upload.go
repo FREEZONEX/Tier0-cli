@@ -133,7 +133,7 @@ func runAssetsUpload(cmd *cobra.Command, args []string) error {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("parse upload response: %w", err), jsonMode)
 	}
 	if uploadResp.Code != 0 && uploadResp.Code != 200 {
-		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), apierr.New(uploadResp.Code, resp), jsonMode)
+		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), apierr.NewBusiness(uploadResp.Code, resp), jsonMode)
 	}
 	if uploadResp.Data.PostURL == "" || uploadResp.Data.FilePath == "" {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("invalid upload response: missing postUrl or filePath"), jsonMode)

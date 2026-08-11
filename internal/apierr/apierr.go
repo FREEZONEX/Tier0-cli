@@ -66,7 +66,7 @@ func (e *APIError) ToEnvelope() errs.Envelope {
 			Message:     e.Message,
 			Hint:        e.Hint,
 			HintCommand: e.HintCommand,
-			Retryable:   e.HTTPStatus >= 500,
+			Retryable:   e.HTTPStatus >= 500 && e.HTTPStatus <= 599,
 		},
 	}
 }
@@ -101,6 +101,22 @@ func New(httpStatus int, rawBody string) *APIError {
 		Message:    msg,
 	}
 	e.Hint, e.HintCommand = hintFor(httpStatus, msg)
+	return e
+}
+
+// NewBusiness builds an APIError from a Tier0 business-envelope code. Business
+// codes are not HTTP status codes and must never become retryable merely
+// because their numeric value is greater than 500.
+func NewBusiness(code int, rawBody string) *APIError {
+	parsedCode, msg := parseBackendMessage(rawBody)
+	if parsedCode != 0 {
+		code = parsedCode
+	}
+	e := &APIError{
+		Code:    code,
+		Message: msg,
+	}
+	e.Hint, e.HintCommand = hintFor(0, msg)
 	return e
 }
 

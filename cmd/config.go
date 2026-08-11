@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
@@ -31,11 +33,11 @@ func init() {
 }
 
 func runConfig(cmd *cobra.Command, args []string) error {
+	jsonMode, _ := cmd.Flags().GetBool("json")
 	setBaseURL, _ := cmd.Flags().GetString("base-url")
 	setAPIKey, _ := cmd.Flags().GetString("api-key")
 	setLang, _ := cmd.Flags().GetString("lang")
 	stdout := cmd.OutOrStdout()
-	stderr := cmd.ErrOrStderr()
 
 	if setBaseURL != "" || setAPIKey != "" || setLang != "" {
 		if setLang != "" {
@@ -61,6 +63,12 @@ func runConfig(cmd *cobra.Command, args []string) error {
 		if err := config.SaveProfile(profile); err != nil {
 			return configCommandError(cmd, "failed to save config: "+err.Error(), err)
 		}
+		if jsonMode {
+			if err := writeConfigJSON(stdout, profile); err != nil {
+				return internalCommandError(cmd, "failed to write config JSON: "+err.Error(), err)
+			}
+			return nil
+		}
 		if setBaseURL != "" {
 			fmt.Fprintf(stdout, "✓ BaseURL set to: %s\n", strings.TrimRight(setBaseURL, "/"))
 		}
@@ -83,15 +91,44 @@ func runConfig(cmd *cobra.Command, args []string) error {
 	if profile.BaseURL != "" {
 		baseURL = profile.BaseURL
 	}
+	if jsonMode {
+		profile.BaseURL = baseURL
+		if err := writeConfigJSON(stdout, profile); err != nil {
+			return internalCommandError(cmd, "failed to write config JSON: "+err.Error(), err)
+		}
+		return nil
+	}
 	fmt.Fprintf(stdout, "BaseURL:  %s\n", baseURL)
 	fmt.Fprintln(stdout, "Language: en")
 	if profile.APIKey != "" {
-		fmt.Fprintf(stdout, "API Key:  %s...\n", profile.APIKey[:8])
+		fmt.Fprintf(stdout, "API Key:  %s...\n", profile.APIKey[:min(8, len(profile.APIKey))])
 	} else {
 		fmt.Fprintln(stdout, "API Key:  (not set)")
 	}
-	_ = stderr
 	return nil
+}
+
+func writeConfigJSON(stdout io.Writer, profile config.Profile) error {
+	baseURL := profile.BaseURL
+	if baseURL == "" {
+		baseURL = cmdutil.ResolveBaseURL("")
+	}
+	prefix := ""
+	if profile.APIKey != "" {
+		prefix = profile.APIKey[:min(8, len(profile.APIKey))]
+	}
+	result := map[string]any{
+		"baseURL":          baseURL,
+		"language":         "en",
+		"apiKeyConfigured": profile.APIKey != "",
+		"apiKeyPrefix":     prefix,
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(stdout, string(encoded))
+	return err
 }
 
 func min(a, b int) int {

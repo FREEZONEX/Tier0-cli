@@ -50,6 +50,8 @@ func init() {
 		"Deprecated: topic type is now derived from the path (Metric/Action/State folder before leaf)")
 	unsCreateCmd.Flags().String("fields", "",
 		"Schema fields JSON array (e.g. '[{\"name\":\"temp\",\"type\":\"float\"}]')")
+	unsCreateCmd.Flags().String("fields-file", "",
+		"Read schema fields JSON array from file")
 	addDryRunFlag(unsCreateCmd)
 }
 
@@ -65,6 +67,7 @@ func runUnsCreate(cmd *cobra.Command, args []string) error {
 	file, _ := cmd.Flags().GetString("file")
 	topicType, _ := cmd.Flags().GetString("topic-type")
 	fields, _ := cmd.Flags().GetString("fields")
+	fieldsFile, _ := cmd.Flags().GetString("fields-file")
 
 	var namespace []any
 	createdPath := ""
@@ -72,7 +75,7 @@ func runUnsCreate(cmd *cobra.Command, args []string) error {
 	errOut := cmd.ErrOrStderr()
 	if file != "" {
 		var conflicts []string
-		for _, name := range []string{"topic", "parent", "type", "display-name", "description", "alias", "topic-type", "fields"} {
+		for _, name := range []string{"topic", "parent", "type", "display-name", "description", "alias", "topic-type", "fields", "fields-file"} {
 			if cmd.Flags().Changed(name) {
 				conflicts = append(conflicts, "--"+name)
 			}
@@ -88,9 +91,22 @@ func runUnsCreate(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return invalidArgumentCause(cmd, "--file", "namespace file is invalid: "+err.Error(), err)
 		}
+		if err := validateNamespaceTree(namespace); err != nil {
+			return invalidArgumentCause(cmd, "--file", "namespace file is invalid: "+err.Error(), err)
+		}
 	} else {
 		if topic == "" || nodeType == "" {
 			return invalidArgument(cmd, "--topic/--type", "--topic and --type are required (or use --file)")
+		}
+		if cmd.Flags().Changed("fields") && cmd.Flags().Changed("fields-file") {
+			return invalidArgument(cmd, "--fields/--fields-file", "--fields and --fields-file are mutually exclusive")
+		}
+		if cmd.Flags().Changed("fields-file") {
+			raw, err := os.ReadFile(fieldsFile)
+			if err != nil {
+				return fileIOError(cmd, "--fields-file", "read fields file", fieldsFile, err)
+			}
+			fields = string(raw)
 		}
 		var err error
 		namespace, createdPath, err = buildNamespaceFromFlags(parent, topic, nodeType, topicType, displayName, description, alias, fields, errOut)

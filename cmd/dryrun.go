@@ -49,6 +49,13 @@ func internalCommandError(command *cobra.Command, message string, cause error) e
 	return handleCLIError(command, cliErr)
 }
 
+func apiCommandError(command *cobra.Command, message string, cause error) error {
+	cliErr := errs.New(errs.CategoryAPI, 0, message).
+		WithSubtype(errs.SubtypeFailedPrecondition).
+		WithCause(cause)
+	return handleCLIError(command, cliErr)
+}
+
 func configCommandError(command *cobra.Command, message string, cause error) error {
 	cliErr := errs.New(errs.CategoryConfig, 0, message).
 		WithSubtype(errs.SubtypeFileIO).

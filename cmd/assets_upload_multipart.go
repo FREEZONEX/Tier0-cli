@@ -608,7 +608,7 @@ func multipartCall(ctx context.Context, subpath string, body any, debug bool, ou
 		return errs.New(errs.CategoryInternal, 0, "parse multipart response: "+err.Error())
 	}
 	if envelope.Code != 0 && envelope.Code != 200 {
-		return apierr.New(envelope.Code, resp)
+		return apierr.NewBusiness(envelope.Code, resp)
 	}
 	if out != nil && len(envelope.Data) > 0 {
 		if err := json.Unmarshal(envelope.Data, out); err != nil {

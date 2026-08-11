@@ -1,6 +1,6 @@
 {
   "name": "@tier0/cli",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "description": "Tier0 CLI — Unified Namespace data platform command line tool",
   "bin": {
     "tier0": "./bin/tier0"

@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
 	"github.com/FREEZONEX/Tier0-cli/internal/notice"
@@ -26,12 +27,16 @@ func init() {
 		"New alias")
 	unsUpdateCmd.Flags().String("description", "",
 		"New description")
+	unsUpdateCmd.Flags().Bool("clear-description", false,
+		"Clear the description without relying on an empty shell argument")
 	unsUpdateCmd.Flags().StringP("display-name", "d", "",
 		"New display name")
 	unsUpdateCmd.Flags().String("extend-properties", "",
 		"Extended properties JSON object")
 	unsUpdateCmd.Flags().String("fields", "",
 		"Schema fields JSON array")
+	unsUpdateCmd.Flags().String("fields-file", "",
+		"Read schema fields JSON array from file")
 	unsUpdateCmd.Flags().StringSlice("update-mask", nil,
 		"Fields to update (repeatable, e.g. name,description,fields)")
 	unsUpdateCmd.MarkFlagRequired("path")
@@ -45,9 +50,11 @@ func runUnsUpdate(cmd *cobra.Command, args []string) error {
 	name, _ := cmd.Flags().GetString("name")
 	alias, _ := cmd.Flags().GetString("alias")
 	description, _ := cmd.Flags().GetString("description")
+	clearDescription, _ := cmd.Flags().GetBool("clear-description")
 	displayName, _ := cmd.Flags().GetString("display-name")
 	extendProps, _ := cmd.Flags().GetString("extend-properties")
 	fields, _ := cmd.Flags().GetString("fields")
+	fieldsFile, _ := cmd.Flags().GetString("fields-file")
 	updateMask, _ := cmd.Flags().GetStringSlice("update-mask")
 
 	payload := map[string]any{"path": path}
@@ -60,7 +67,13 @@ func runUnsUpdate(cmd *cobra.Command, args []string) error {
 		payload["alias"] = alias
 		hasUpdate = true
 	}
-	if cmd.Flags().Changed("description") {
+	if cmd.Flags().Changed("description") && clearDescription {
+		return invalidArgument(cmd, "--description/--clear-description", "--description and --clear-description are mutually exclusive")
+	}
+	if cmd.Flags().Changed("fields") && cmd.Flags().Changed("fields-file") {
+		return invalidArgument(cmd, "--fields/--fields-file", "--fields and --fields-file are mutually exclusive")
+	}
+	if cmd.Flags().Changed("description") || clearDescription {
 		payload["description"] = description
 		hasUpdate = true
 	}
@@ -76,10 +89,21 @@ func runUnsUpdate(cmd *cobra.Command, args []string) error {
 		payload["extendProperties"] = props
 		hasUpdate = true
 	}
-	if cmd.Flags().Changed("fields") {
+	if cmd.Flags().Changed("fields-file") {
+		raw, err := os.ReadFile(fieldsFile)
+		if err != nil {
+			return fileIOError(cmd, "--fields-file", "read fields file", fieldsFile, err)
+		}
+		fields = string(raw)
+	}
+	if cmd.Flags().Changed("fields") || cmd.Flags().Changed("fields-file") {
 		var fieldList []any
 		if err := json.Unmarshal([]byte(fields), &fieldList); err != nil {
-			return invalidArgumentCause(cmd, "--fields", "--fields must be a JSON array: "+err.Error(), err)
+			param := "--fields"
+			if cmd.Flags().Changed("fields-file") {
+				param = "--fields-file"
+			}
+			return invalidArgumentCause(cmd, param, param+" must contain a JSON array: "+err.Error(), err)
 		}
 		payload["fields"] = fieldList
 		hasUpdate = true

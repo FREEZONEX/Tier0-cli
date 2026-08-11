@@ -170,13 +170,13 @@ func TestBuildNamespaceFromFlags_WithParent(t *testing.T) {
 }
 
 func TestBuildNamespaceFromFlags_ActionAndState(t *testing.T) {
-	cases := []struct{ topic, nt, wantTT string }{
-		{"Machine/Action/Start", "topic", "ACTION"},
-		{"Machine/State/Status", "topic", "STATE"},
-		{"Machine/Metric/Speed", "topic", "METRIC"},
+	cases := []struct{ topic, nt, fields, wantTT string }{
+		{"Machine/Action/Start", "topic", "", "ACTION"},
+		{"Machine/State/Status", "topic", "", "STATE"},
+		{"Machine/Metric/Speed", "topic", `[{"name":"value","type":"float"}]`, "METRIC"},
 	}
 	for _, c := range cases {
-		ns, _, err := buildNamespaceFromFlags("", c.topic, c.nt, "", "", "", "", "", nil)
+		ns, _, err := buildNamespaceFromFlags("", c.topic, c.nt, "", "", "", "", c.fields, nil)
 		if err != nil {
 			t.Errorf("%q: unexpected error: %v", c.topic, err)
 			continue
@@ -193,6 +193,15 @@ func TestBuildNamespaceFromFlags_ActionAndState(t *testing.T) {
 		if node["topicType"] != c.wantTT {
 			t.Errorf("%q: topicType=%v, want %q", c.topic, node["topicType"], c.wantTT)
 		}
+	}
+}
+
+func TestBuildNamespaceFromFlags_MetricRequiresFields(t *testing.T) {
+	_, _, err := buildNamespaceFromFlags(
+		"", "Machine/Metric/Speed", "topic", "", "", "", "", "", nil,
+	)
+	if err == nil || !strings.Contains(err.Error(), "fields is required") {
+		t.Fatalf("expected Metric fields validation error, got %v", err)
 	}
 }
 
@@ -286,5 +295,27 @@ func TestParseNamespaceFile_FromDisk(t *testing.T) {
 	ns, err := parseNamespaceFile(data)
 	if err != nil || len(ns) != 1 {
 		t.Fatalf("err=%v len=%d", err, len(ns))
+	}
+}
+
+func TestValidateNamespaceTree_UsesNameNotPath(t *testing.T) {
+	ns, err := parseNamespaceFile([]byte(`{"namespace":[{"path":"Plant","type":"PATH"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = validateNamespaceTree(ns)
+	if err == nil || !strings.Contains(err.Error(), `use "name"`) {
+		t.Fatalf("expected name/path validation error, got %v", err)
+	}
+}
+
+func TestValidateNamespaceTree_BatchMetricRequiresFields(t *testing.T) {
+	ns, err := parseNamespaceFile([]byte(`{"namespace":[{"name":"Plant","type":"PATH","children":[{"name":"Metric","type":"PATH","children":[{"name":"Temperature","type":"TOPIC"}]}]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = validateNamespaceTree(ns)
+	if err == nil || !strings.Contains(err.Error(), "fields is required") {
+		t.Fatalf("expected Metric fields validation error, got %v", err)
 	}
 }

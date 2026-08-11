@@ -70,6 +70,9 @@ func runAPI(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
 	}
+	if err := cmdutil.CheckResponse(resp); err != nil {
+		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
+	}
 
 	checker.Emit(resp, jsonMode, cmd.OutOrStdout(), cmd.ErrOrStderr())
 	if !jsonMode {

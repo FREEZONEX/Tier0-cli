@@ -3,9 +3,12 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/FREEZONEX/Tier0-cli/internal/config"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -20,6 +23,78 @@ type dryRunTestEnvelope struct {
 			Body   map[string]any `json:"body"`
 		} `json:"api"`
 	} `json:"data"`
+}
+
+func TestUNSFieldsFileDryRuns(t *testing.T) {
+	t.Setenv("TIER0_BASE_URL", "https://example.test/")
+	fieldsFile := filepath.Join(t.TempDir(), "fields.json")
+	if err := os.WriteFile(fieldsFile, []byte(`[{"name":"value","type":"float"}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	commands := [][]string{
+		{"uns", "create", "--topic", "Plant/Metric/T", "--type", "topic", "--fields-file", fieldsFile, "--dry-run", "--json"},
+		{"uns", "update", "--path", "Plant/Metric/T", "--fields-file", fieldsFile, "--update-mask", "fields", "--dry-run", "--json"},
+	}
+	for _, args := range commands {
+		stdout, stderr, err := executeRootForTest(args...)
+		if err != nil {
+			t.Fatalf("%v: %v\nstderr: %s", args, err, stderr)
+		}
+		var envelope dryRunTestEnvelope
+		if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
+			t.Fatalf("%v: invalid JSON: %v\n%s", args, err, stdout)
+		}
+		fields, ok := findFields(envelope.Data.API[0].Body)
+		if !ok || len(fields) != 1 {
+			t.Fatalf("%v: fields not found in body=%#v", args, envelope.Data.API[0].Body)
+		}
+	}
+}
+
+func findFields(value any) ([]any, bool) {
+	switch typed := value.(type) {
+	case map[string]any:
+		if fields, ok := typed["fields"].([]any); ok {
+			return fields, true
+		}
+		for _, child := range typed {
+			if fields, ok := findFields(child); ok {
+				return fields, true
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if fields, ok := findFields(child); ok {
+				return fields, true
+			}
+		}
+	}
+	return nil, false
+}
+
+func TestWriteConfigJSONIsStructuredAndRedacted(t *testing.T) {
+	var out bytes.Buffer
+	err := writeConfigJSON(&out, config.Profile{
+		BaseURL: "https://example.test",
+		APIKey:  "sk-personal-secret-value",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out.String())
+	}
+	if result["baseURL"] != "https://example.test" || result["apiKeyConfigured"] != true {
+		t.Fatalf("unexpected config JSON: %#v", result)
+	}
+	if result["apiKeyPrefix"] != "sk-perso" {
+		t.Fatalf("unexpected API key prefix: %#v", result["apiKeyPrefix"])
+	}
+	if strings.Contains(out.String(), "secret-value") {
+		t.Fatalf("config JSON leaked API key: %s", out.String())
+	}
 }
 
 func TestMutationCommandsShareDryRunContract(t *testing.T) {
@@ -45,9 +120,15 @@ func TestMutationCommandsShareDryRunContract(t *testing.T) {
 		},
 		{
 			name:     "uns create",
-			args:     []string{"uns", "create", "--topic", "Plant/Metric/T", "--type", "topic", "--dry-run", "--json"},
+			args:     []string{"uns", "create", "--topic", "Plant/Metric/T", "--type", "topic", "--fields", `[{"name":"value","type":"float"}]`, "--dry-run", "--json"},
 			method:   "POST",
 			endpoint: "/openapi/v1/uns/create",
+		},
+		{
+			name:     "assets delete without yes",
+			args:     []string{"assets", "delete", "--file-path", "workspace/report.csv", "--dry-run", "--json"},
+			method:   "POST",
+			endpoint: "/openapi/v1/assets/files/delete",
 		},
 		{
 			name:     "uns update",
@@ -146,6 +227,11 @@ func TestCommandValidationErrorsAreTyped(t *testing.T) {
 			name:  "strict api JSON",
 			args:  []string{"api", "/custom", "--body", `{path:/}`, "--json"},
 			param: "--body",
+		},
+		{
+			name:  "UNS value must be object",
+			args:  []string{"uns", "write", "--topic", "Plant/Metric/T", "--value", `27.5`, "--json"},
+			param: "--value",
 		},
 	}
 

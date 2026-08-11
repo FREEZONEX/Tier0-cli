@@ -138,7 +138,9 @@ build_one() {
       local skill_name
       skill_name=$(basename "$item")
       # Skip .git and scripts.
-      if [[ "$skill_name" == ".git" || "$skill_name" == "install-openclaw.sh" ]]; then
+      if [[ "$skill_name" == ".git" || "$skill_name" == "install-openclaw.sh" ||
+            "$skill_name" == "README.md" || "$skill_name" == "CHANGELOG.md" ||
+            "$skill_name" == "_commit_msg.txt" ]]; then
         continue
       fi
       if [[ -d "$item" ]]; then

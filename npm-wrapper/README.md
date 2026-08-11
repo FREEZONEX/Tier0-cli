@@ -7,7 +7,7 @@ Tier0 CLI npm wrapper.
 Recommended:
 
 ```bash
-npx @tier0/cli@latest install
+npx -y @tier0/cli@latest install
 ```
 
 Global install:
