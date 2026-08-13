@@ -21,12 +21,13 @@ import (
 )
 
 var (
-	fetchLatestRelease = FetchLatestRelease
-	fetchRelease       = FetchRelease
-	npmAvailable       = NpmAvailable
-	runNpmInstall      = RunNpmInstall
-	execLookPath       = exec.LookPath
-	execCommandContext = exec.CommandContext
+	fetchLatestRelease  = FetchLatestRelease
+	fetchRelease        = FetchRelease
+	npmAvailable        = NpmAvailable
+	runNpmInstall       = RunNpmInstall
+	execLookPath        = exec.LookPath
+	execCommandContext  = exec.CommandContext
+	prepareUpgradeSkill = prepareInstalledSkill
 )
 
 // Options controls upgrade behavior.
@@ -43,7 +44,9 @@ type Result struct {
 	DownloadURL    string `json:"downloadUrl,omitempty"`
 	ErrorMessage   string `json:"error,omitempty"`
 	// Method indicates how the upgrade was performed: "npm" or "github"
-	Method string `json:"method,omitempty"`
+	Method      string `json:"method,omitempty"`
+	SkillStatus string `json:"skillStatus,omitempty"`
+	SkillError  string `json:"skillError,omitempty"`
 }
 
 // Check reports whether a newer version is available.
@@ -121,11 +124,15 @@ func Perform(opts Options) (*Result, error) {
 			LatestVersion: release.TagName,
 			CheckedAt:     time.Now().Unix(),
 		})
-		return &Result{
+		result := &Result{
 			CurrentVersion: version.BuildVersion,
 			LatestVersion:  release.TagName,
 			UpToDate:       true,
-		}, nil
+		}
+		if !opts.DryRun {
+			result.SkillStatus, result.SkillError = prepareUpgradeSkill("")
+		}
+		return result, nil
 	}
 
 	asset := release.FindAsset()
@@ -159,6 +166,7 @@ func Perform(opts Options) (*Result, error) {
 			return result, err
 		} else {
 			result.Method = "npm"
+			result.SkillStatus, result.SkillError = prepareUpgradeSkill("")
 			return result, nil
 		}
 	}
@@ -223,8 +231,38 @@ func Perform(opts Options) (*Result, error) {
 		result.ErrorMessage = fmt.Sprintf("failed to replace binary: %v; old version was backed up to ~/.tier0/backup/", err)
 		return result, err
 	}
+	result.SkillStatus, result.SkillError = prepareUpgradeSkill(binaryPath)
 
 	return result, nil
+}
+
+func prepareInstalledSkill(binaryPath string) (string, string) {
+	if binaryPath == "" {
+		var err error
+		binaryPath, err = execLookPath("tier0")
+		if err != nil {
+			return "failed", fmt.Sprintf("cannot locate upgraded CLI for Skill install: %v", err)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	output, err := execCommandContext(ctx, binaryPath, "skills", "install", "--no-sync", "--json").CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return "failed", "embedded Skill install timed out after 30s"
+	}
+	if err != nil {
+		detail := strings.TrimSpace(string(output))
+		if detail == "" {
+			detail = err.Error()
+		}
+		return "failed", detail
+	}
+
+	if err := SyncAgentSkills(FallbackSkillsDir()); err != nil {
+		return "installed", err.Error()
+	}
+	return "synced", ""
 }
 
 func verifyInstalledVersion(expectedVersion string) error {

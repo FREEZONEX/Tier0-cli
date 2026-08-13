@@ -1,0 +1,155 @@
+[
+  {
+    "id": "tab-opcua-collect",
+    "type": "tab",
+    "label": "OPC-UA Collection Example",
+    "disabled": false,
+    "info": "OPC-UA multi-tag subscription. Changes are published to Tier0 UNS.\n\nUpdate cfg-opcua-ep.endpoint to the real server address.\nUpdate the nodeId list in fn-build-items.\nUpdate the topicMap mapping in fn-to-uns."
+  },
+  {
+    "id": "cfg-opcua-ep",
+    "type": "OpcUa-Endpoint",
+    "endpoint": "opc.tcp://192.168.1.200:4840",
+    "secpol": "None",
+    "secmode": "None",
+    "none": true,
+    "login": false,
+    "usercert": false,
+    "name": "Line1 OPC-UA Server"
+  },
+  {
+    "id": "inject-start",
+    "type": "inject",
+    "z": "tab-opcua-collect",
+    "name": "Start subscription once after deploy",
+    "repeat": "",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "str",
+    "x": 200,
+    "y": 120,
+    "wires": [
+      [
+        "fn-build-items"
+      ]
+    ]
+  },
+  {
+    "id": "fn-build-items",
+    "type": "function",
+    "z": "tab-opcua-collect",
+    "name": "Subscription tag list",
+    "func": "// Multi-tag subscription: build the nodeId array. Replace with real OPC-UA node IDs.\nmsg.topic = \"multiple\";\nmsg.payload = [\n  { nodeId: \"ns=2;s=Temperature\" },\n  { nodeId: \"ns=2;s=Humidity\" },\n  { nodeId: \"ns=2;s=ProductionCount\" }\n];\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "x": 460,
+    "y": 120,
+    "wires": [
+      [
+        "opcua-client-sub"
+      ]
+    ]
+  },
+  {
+    "id": "opcua-client-sub",
+    "type": "OpcUa-Client",
+    "z": "tab-opcua-collect",
+    "endpoint": "cfg-opcua-ep",
+    "action": "subscribe",
+    "deadbandtype": "a",
+    "deadbandvalue": 0,
+    "time": 1,
+    "timeUnit": "s",
+    "certificate": "n",
+    "localfile": "",
+    "localkeyfile": "",
+    "securitymode": "None",
+    "securitypolicy": "None",
+    "useTransport": false,
+    "maxChunkCount": 1,
+    "maxMessageSize": 65536,
+    "receiveBufferSize": 65536,
+    "sendBufferSize": 65536,
+    "setstatusandtime": false,
+    "keepsessionalive": true,
+    "name": "OPC-UA subscription",
+    "applicationName": "",
+    "applicationUri": "",
+    "x": 700,
+    "y": 120,
+    "wires": [
+      [
+        "fn-to-uns"
+      ],
+      [
+        "debug-status"
+      ]
+    ]
+  },
+  {
+    "id": "fn-to-uns",
+    "type": "function",
+    "z": "tab-opcua-collect",
+    "name": "OPC-UA to UNS mapping",
+    "func": "// wire[0] receives subscription change data.\nvar dv = msg.payload;\n\n// Extract the actual value.\nvar rawValue = (dv && dv.value) ? dv.value.value : null;\nif (rawValue === null || rawValue === undefined) return null;\n\n// Quality: statusCode.value === 0 means Good.\nvar quality = (dv.statusCode && dv.statusCode.value === 0) ? \"Good\" : \"Bad\";\nif (quality !== \"Good\") return null;  // Drop bad quality values unless the task requires alarms.\n\n// nodeId to UNS topic path and field mapping.\n// Replace with the real node IDs and UNS paths.\nvar topicMap = {\n  \"ns=2;s=Temperature\":     { topic: \"Plant/Line1/Metric/Temperature\",    field: \"temperature\" },\n  \"ns=2;s=Humidity\":        { topic: \"Plant/Line1/Metric/Humidity\",        field: \"humidity\" },\n  \"ns=2;s=ProductionCount\": { topic: \"Plant/Line1/Metric/ProductionCount\", field: \"value\" }\n};\n\nvar mapping = topicMap[msg.topic];\nif (!mapping) return null;  // Ignore unmapped tags.\n\nmsg.topic   = mapping.topic;\nmsg.payload = JSON.stringify({ [mapping.field]: rawValue });\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "x": 940,
+    "y": 80,
+    "wires": [
+      [
+        "mqtt-out-uns"
+      ]
+    ]
+  },
+  {
+    "id": "debug-status",
+    "type": "debug",
+    "z": "tab-opcua-collect",
+    "name": "OPC-UA connection status",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": true,
+    "complete": "payload",
+    "targetType": "msg",
+    "x": 960,
+    "y": 160,
+    "wires": []
+  },
+  {
+    "id": "mqtt-out-uns",
+    "type": "mqtt out",
+    "z": "tab-opcua-collect",
+    "name": "Publish to UNS",
+    "topic": "",
+    "qos": "0",
+    "retain": false,
+    "respTopic": "",
+    "contentType": "",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "{{TIER0_MQTT_BROKER_ID}}",
+    "x": 1180,
+    "y": 80,
+    "wires": []
+  },
+  {
+    "id": "comment-1",
+    "type": "comment",
+    "z": "tab-opcua-collect",
+    "name": "OPC-UA multi-tag subscription to Tier0 UNS",
+    "info": "## Architecture\ninject(once) -> fn(tag list) -> OpcUa-Client(subscribe) -> fn(map to UNS) -> mqtt out\n\n## Required edits\n1. cfg-opcua-ep: set endpoint to the real OPC-UA server address.\n2. fn-build-items: replace nodeId values with the real subscription tags.\n3. fn-to-uns: update topicMap with the real nodeId to UNS path and field mappings.\n4. Replace {{TIER0_MQTT_BROKER_ID}} with the ID of the backend-created Tier0 mqtt-broker config from flow data, and include that preserved config node in the final deploy array.\n\n## Output format\nMQTT topic = UNS path, for example Plant/Line1/Metric/Temperature.\nMQTT payload = JSON string, for example {\"temperature\": 27.5}.",
+    "x": 200,
+    "y": 40,
+    "wires": []
+  }
+]

@@ -8,6 +8,8 @@ set -euo pipefail
 # Environment variables (recommended in .env; loaded automatically):
 #   GITHUB_TOKEN  - GitHub Personal Access Token
 #   PARALLEL      - parallel build count (default 8)
+#   BUILD_ONLY    - set to 1 to build and verify packages without publishing
+#   TARGET_PLATFORMS - optional space-separated GOOS/GOARCH list for local tests
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -21,6 +23,8 @@ VERSION="${1:-v0.1.0}"
 BUILD_DIR="${ROOT}/dist/release-${VERSION}"
 RELEASE_DIR="${BUILD_DIR}/packages"
 PARALLEL="${PARALLEL:-8}"
+BUILD_ONLY="${BUILD_ONLY:-0}"
+TARGET_PLATFORMS="${TARGET_PLATFORMS:-}"
 
 # Skill source directory, normally the sibling Tier0-skill checkout.
 # SKILL_SRC can override this in release automation.
@@ -28,9 +32,14 @@ SKILL_SRC="${SKILL_SRC:-${ROOT}/../Tier0-skill}"
 if [[ ! -f "${SKILL_SRC}/SKILL.md" && -f "${ROOT}/../skill/SKILL.md" ]]; then
   SKILL_SRC="${ROOT}/../skill"
 fi
-if [[ ! -f "${SKILL_SRC}/SKILL.md" ]]; then
-  echo "[release] error: Tier0 Skill source not found at ${SKILL_SRC}" >&2
-  echo "[release] check out FREEZONEX/Tier0-skill beside Tier0-cli or set SKILL_SRC" >&2
+if [[ -f "${SKILL_SRC}/SKILL.md" ]]; then
+  # When the source checkout is available, refuse to release stale embedded
+  # content. Sync and review it explicitly before running this script.
+  SKILL_SRC="${SKILL_SRC}" bash "${ROOT}/scripts/sync-embedded-skill.sh" --check
+elif [[ -f "${ROOT}/internal/embeddedskill/content/SKILL.md" ]]; then
+  echo "[release] external Skill source not found; using checked-in embedded baseline"
+else
+  echo "[release] error: neither external nor embedded Tier0 Skill content was found" >&2
   exit 1
 fi
 
@@ -82,16 +91,21 @@ fi
 rm -rf "${BUILD_DIR}"
 mkdir -p "${RELEASE_DIR}"
 
-# Get native platforms, excluding wasm/android/ios/js.
+# Get requested or native platforms, excluding wasm/android/ios/js.
 PLATFORMS=()
+platform_source="$(go tool dist list | sort)"
+if [[ -n "${TARGET_PLATFORMS}" ]]; then
+  platform_source="$(printf '%s\n' ${TARGET_PLATFORMS})"
+fi
 while IFS='/' read -r goos goarch; do
+	[[ -z "${goos}" || -z "${goarch}" ]] && continue
   platform="${goos}/${goarch}"
   if is_excluded "$platform"; then
     echo "[skip] ${platform} (excluded)"
     continue
   fi
   PLATFORMS+=("${goos}:${goarch}")
-done < <(go tool dist list | sort)
+done <<< "${platform_source}"
 
 echo ""
 echo "Preparing ${#PLATFORMS[@]} platform builds, parallelism: ${PARALLEL}"
@@ -128,38 +142,6 @@ build_one() {
     echo "FAILED:${platform}"
     rm -rf "${platform_dir}"
     return 1
-  fi
-
-  # Copy skill assets into the release package.
-  if [[ -d "${SKILL_SRC}" ]]; then
-    mkdir -p "${platform_dir}/skill"
-    # Copy SKILL.md, uns/, LICENSE, and related assets.
-    for item in "${SKILL_SRC}"/*; do
-      local skill_name
-      skill_name=$(basename "$item")
-      # Skip .git and scripts.
-      if [[ "$skill_name" == ".git" || "$skill_name" == "install-openclaw.sh" ||
-            "$skill_name" == "README.md" || "$skill_name" == "CHANGELOG.md" ||
-            "$skill_name" == "_commit_msg.txt" ]]; then
-        continue
-      fi
-      if [[ -d "$item" ]]; then
-        cp -R "$item" "${platform_dir}/skill/"
-      else
-        cp "$item" "${platform_dir}/skill/"
-      fi
-    done
-
-    # Exclude maintainer-only protocol implementation snapshots. The runtime
-    # Skill uses the lightweight documents under flow/references/protocols.
-    rm -rf -- "${platform_dir}/skill/flow/references/protocal"
-
-    # Never ship nested Git repositories from reference projects.
-    find "${platform_dir}/skill" -type d -name .git -prune -exec rm -rf {} +
-
-    # Write skills version metadata.
-    printf '{\n  "version": "%s",\n  "updatedAt": "%s"\n}\n' \
-      "${VERSION}" "${build_date}" > "${platform_dir}/skill/_meta.json"
   fi
 
   echo "[OK]       ${platform} (${name})" >&2
@@ -344,15 +326,20 @@ release_github() {
     local fname
     fname=$(basename "$asset")
     echo -n "[github] Uploading ${fname} ... "
-    if curl -s -X POST \
+    local upload_code
+    if ! upload_code=$(curl -sS -o /dev/null -w "%{http_code}" -X POST \
       -H "Authorization: token ${GITHUB_TOKEN}" \
       -H "Accept: application/vnd.github.v3+json" \
       -H "Content-Type: application/octet-stream" \
       "${upload_url}?name=${fname}" \
-      --data-binary "@$asset" >/dev/null 2>&1; then
+      --data-binary "@$asset" 2>/dev/null); then
+      upload_code="000"
+    fi
+    if [[ "${upload_code}" =~ ^2[0-9][0-9]$ ]]; then
       echo "OK"
     else
-      echo "FAILED"
+      echo "FAILED (HTTP ${upload_code})"
+      return 1
     fi
   done
 
@@ -435,6 +422,13 @@ release_npm() {
     return 1
   fi
 }
+
+# Build-only mode supports local packaging and CI artifact verification without
+# requiring GitHub or npm credentials.
+if [[ "${BUILD_ONLY}" == "1" ]]; then
+  echo "[release] BUILD_ONLY=1; packages verified, publish skipped"
+  exit 0
+fi
 
 # Try publishing.
 echo "========================================"

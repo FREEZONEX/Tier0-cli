@@ -98,6 +98,14 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	fmt.Fprintln(stdout,
 		"Please restart tier0 to use the new version.",
 	)
+	switch result.SkillStatus {
+	case "synced":
+		fmt.Fprintln(stdout, "Embedded Skill installed and synced to detected agents.")
+	case "installed":
+		fmt.Fprintf(stdout, "Embedded Skill installed; Agent Skills sync needs a retry: %s\n", result.SkillError)
+	case "failed":
+		fmt.Fprintf(stdout, "Warning: CLI upgraded, but embedded Skill install failed: %s\n", result.SkillError)
+	}
 	if via != "npm" {
 		fmt.Fprintf(stdout,
 			"Old binary backed up to: %s\n",

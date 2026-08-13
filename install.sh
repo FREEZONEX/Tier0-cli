@@ -43,7 +43,8 @@ PLATFORM="$(detect_platform)"
 LATEST_URL="https://api.github.com/repos/$REPO/releases/latest"
 VERSION="$(curl -sL "$LATEST_URL" | grep -o '"tag_name": "[^"]*' | cut -d'"' -f4)"
 if [ -z "$VERSION" ]; then
-  VERSION="v0.2.7"
+  echo "error: unable to determine the latest Tier0 CLI version" >&2
+  exit 1
 fi
 
 # Download.
@@ -52,7 +53,28 @@ DOWNLOAD_URL="https://github.com/$REPO/releases/download/$VERSION/$PKG_NAME"
 TMP_DIR="$(mktemp -d)"
 trap "rm -rf $TMP_DIR" EXIT
 
-curl -sL "$DOWNLOAD_URL" -o "$TMP_DIR/$PKG_NAME"
+curl -fsSL "$DOWNLOAD_URL" -o "$TMP_DIR/$PKG_NAME"
+
+# Verify the release artifact before executing it.
+SUMS_URL="https://github.com/$REPO/releases/download/$VERSION/sha256sums.txt"
+curl -fsSL "$SUMS_URL" -o "$TMP_DIR/sha256sums.txt"
+EXPECTED_SHA="$(awk -v name="$PKG_NAME" '$2 == name || $2 == "*" name { print $1; exit }' "$TMP_DIR/sha256sums.txt")"
+if [ -z "$EXPECTED_SHA" ]; then
+  echo "error: checksum not found for $PKG_NAME" >&2
+  exit 1
+fi
+if command -v sha256sum >/dev/null 2>&1; then
+  ACTUAL_SHA="$(sha256sum "$TMP_DIR/$PKG_NAME" | awk '{print $1}')"
+elif command -v shasum >/dev/null 2>&1; then
+  ACTUAL_SHA="$(shasum -a 256 "$TMP_DIR/$PKG_NAME" | awk '{print $1}')"
+else
+  echo "error: sha256sum or shasum is required to verify the download" >&2
+  exit 1
+fi
+if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+  echo "error: SHA256 verification failed for $PKG_NAME" >&2
+  exit 1
+fi
 
 # Extract.
 tar -xzf "$TMP_DIR/$PKG_NAME" -C "$TMP_DIR"
@@ -81,6 +103,10 @@ mkdir -p "$INSTALL_DIR"
 cp "$BINARY" "$INSTALL_DIR/tier0"
 chmod +x "$INSTALL_DIR/tier0"
 
+# Materialize the trusted Skill compiled into the verified CLI binary. This is
+# required even though release archives no longer contain a duplicate skill/.
+"$INSTALL_DIR/tier0" skills install --no-sync
+
 # PATH configuration.
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
   # Detect current shell.
@@ -104,5 +130,13 @@ if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
 fi
 
 echo "tier0 $VERSION installed to $INSTALL_DIR/tier0"
+if command -v npx >/dev/null 2>&1; then
+  if ! "$INSTALL_DIR/tier0" skills sync; then
+    echo "warning: the local Tier0 Skill is ready, but Agent Skills sync failed" >&2
+    echo "         retry with: tier0 skills sync" >&2
+  fi
+else
+  echo "warning: npx was not found; run 'tier0 skills sync' after installing Node.js" >&2
+fi
 echo ""
 echo "Next: tier0 login"

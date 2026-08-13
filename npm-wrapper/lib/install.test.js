@@ -11,6 +11,7 @@ const {
   install,
   installSkills,
   isNpxPostinstall,
+  materializeEmbeddedSkills,
 } = require('./install');
 
 test('builds a local, copied, global, non-interactive skills install command', () => {
@@ -60,17 +61,44 @@ test('installs agent skills even when the CLI binary is already current', async 
   fs.writeFileSync(path.join(binDir, binaryName()), 'already installed');
   fs.writeFileSync(versionFile, VERSION);
 
-  let call;
+  let localCall;
+  let agentCall;
   await install({
     binDir,
     versionFile,
     requireSkills: true,
+    prepareLocalSkills: async (options) => {
+      localCall = options;
+    },
     installAgentSkills: async (options) => {
-      call = options;
+      agentCall = options;
     },
   });
 
-  assert.deepEqual(call, { required: true });
+  assert.equal(localCall.binaryPath, path.join(binDir, binaryName()));
+  assert.deepEqual(agentCall, { required: true });
+});
+
+test('materializes the Skill from the installed binary without a release skill directory', () => {
+  const skillsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tier0-embedded-skill-'));
+  fs.rmSync(skillsDir, { recursive: true, force: true });
+  const parent = path.dirname(skillsDir);
+  const binaryPath = path.join(parent, binaryName());
+
+  let call;
+  materializeEmbeddedSkills({
+    binaryPath,
+    skillsDir,
+    runner: (command, args) => {
+      call = { command, args };
+      fs.mkdirSync(skillsDir, { recursive: true });
+      fs.writeFileSync(path.join(skillsDir, 'SKILL.md'), 'embedded baseline');
+    },
+  });
+
+  assert.equal(call.command, binaryPath);
+  assert.deepEqual(call.args, ['skills', 'install', '--no-sync', '--json']);
+  fs.rmSync(skillsDir, { recursive: true, force: true });
 });
 
 test('explicit install fails when required agent skills cannot be installed', async (t) => {

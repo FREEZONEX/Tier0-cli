@@ -10,12 +10,14 @@ Recommended, cross-platform, requires Node.js >= 16:
 npx -y @tier0/cli@latest install
 ```
 
-This installs the Go `tier0` binary into `~/.tier0/bin/`, extracts the matching versioned Skill into `~/.tier0/skills/`, and copies it globally to detected agents such as Codex, Claude Code, and Cursor.
+This installs the Go `tier0` binary into `~/.tier0/bin/`, materializes its trusted embedded Skill baseline into `~/.tier0/skills/`, and copies it globally to detected agents such as Codex, Claude Code, and Cursor. Release archives no longer carry a duplicate `skill/` directory.
 
 Then run `tier0 auth whoami --json`. If authentication is missing, run
 `tier0 login --no-wait --json` and open the returned `verification_url`.
 
 Skills can still be updated independently of the CLI. `tier0 skills update` downloads the latest `FREEZONEX/Tier0-skill` content into `~/.tier0/skills/` and resynchronizes detected agents.
+
+Use `tier0 skills status` to inspect provenance and health. `tier0 skills install` repairs a missing or damaged embedded baseline without overwriting an independently updated remote Skill; `tier0 skills install --force` explicitly resets to the baseline compiled into the current CLI.
 
 Global install:
 
@@ -201,9 +203,22 @@ Skill example validation scans the sibling `Tier0-skill/` repository, extracts `
 go test ./cmd -run TestSkillExamples
 ```
 
+After changing the sibling Skill repository, refresh and verify the compiled baseline:
+
+```bash
+bash scripts/sync-embedded-skill.sh
+bash scripts/sync-embedded-skill.sh --check
+```
+
 ## Release
 
 The npm package and Go binary versions are kept in sync by `scripts/release.sh`.
+
+Build one local package without GitHub or npm credentials:
+
+```bash
+BUILD_ONLY=1 TARGET_PLATFORMS=windows/amd64 bash scripts/release.sh vX.Y.Z
+```
 
 ```bash
 export GITHUB_TOKEN=ghp_xxxxxxxx
@@ -211,4 +226,4 @@ npm login
 bash scripts/release.sh vX.Y.Z
 ```
 
-For automation, set `NPM_TOKEN` instead of running `npm login`. Before creating the GitHub Release, the script runs npm tests, validates the packed file list, and verifies npm authentication. The release process then cross-compiles binaries, packages versioned Skills, uploads GitHub Release assets, updates `npm-wrapper/package.json`, and publishes npm.
+For automation, set `NPM_TOKEN` instead of running `npm login`. Before creating the GitHub Release, the script verifies that the embedded Skill mirror is current, runs npm tests, validates the packed file list, and verifies npm authentication. The release process then cross-compiles self-contained binaries, uploads GitHub Release assets, updates `npm-wrapper/package.json`, and publishes npm.

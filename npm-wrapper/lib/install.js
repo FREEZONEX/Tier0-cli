@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const crypto = require('crypto');
-const { execFileSync, execSync, spawn } = require('child_process');
+const { execFileSync, execSync } = require('child_process');
 
 const REPO = 'FREEZONEX/Tier0-cli';
 const BIN_DIR = path.join(require('os').homedir(), '.tier0', 'bin');
@@ -37,34 +37,6 @@ function platformName() {
 function binaryName() {
   return process.platform === 'win32' ? 'tier0.exe' : 'tier0';
 }
-
-function findSkillDir(dir) {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (entry.name === 'skill' && fs.existsSync(path.join(fullPath, 'SKILL.md'))) {
-        return fullPath;
-      }
-      const found = findSkillDir(fullPath);
-      if (found) return found;
-    }
-  }
-  return null;
-}
-
-function copyDirSync(src, dst) {
-  fs.mkdirSync(dst, { recursive: true });
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    const srcPath = path.join(src, entry.name);
-    const dstPath = path.join(dst, entry.name);
-    if (entry.isDirectory()) {
-      copyDirSync(srcPath, dstPath);
-    } else {
-      fs.copyFileSync(srcPath, dstPath);
-    }
-  }
-}
-
 
 function downloadFile(url, dest) {
   return new Promise((resolve, reject) => {
@@ -225,6 +197,27 @@ function verifyInstalledBinary(binaryPath, expectedVersion) {
   }
 }
 
+function materializeEmbeddedSkills({
+  binaryPath,
+  runner = execFileSync,
+  skillsDir = SKILLS_DIR,
+} = {}) {
+  console.log('\nPreparing the Tier0 Skill embedded in the CLI...');
+  try {
+    runner(binaryPath, ['skills', 'install', '--no-sync', '--json'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 30000,
+    });
+  } catch (err) {
+    throw new Error(`embedded Tier0 Skill installation failed: ${err.message}`);
+  }
+  if (!fs.existsSync(path.join(skillsDir, 'SKILL.md'))) {
+    throw new Error(`embedded Tier0 Skill did not create ${skillsDir}`);
+  }
+  console.log('Tier0 Skill baseline is ready.');
+}
+
 function printAuthNextStep() {
   console.log('\nNext: verify authentication with `tier0 auth whoami --json`.');
   console.log('If authentication is missing, run `tier0 login --no-wait --json` and open the returned verification_url.');
@@ -234,6 +227,7 @@ async function install({
   force = false,
   requireSkills = false,
   installAgentSkills = installSkills,
+  prepareLocalSkills = materializeEmbeddedSkills,
   binDir = BIN_DIR,
   versionFile = VERSION_FILE,
 } = {}) {
@@ -246,6 +240,7 @@ async function install({
     const current = fs.readFileSync(versionFile, 'utf8').trim();
     if (current === version) {
       console.log(`tier0 ${version} already installed.`);
+      await prepareLocalSkills({ binaryPath: binPath });
       await installAgentSkills({ required: requireSkills });
       printAuthNextStep();
       return;
@@ -310,15 +305,6 @@ async function install({
     verifyInstalledBinary(binPath, version);
     fs.writeFileSync(versionFile, version);
 
-    // Install skills documentation.
-    const foundSkillDir = findSkillDir(extractDir);
-    if (foundSkillDir) {
-      if (fs.existsSync(SKILLS_DIR)) {
-        fs.rmSync(SKILLS_DIR, { recursive: true, force: true });
-      }
-      copyDirSync(foundSkillDir, SKILLS_DIR);
-    }
-
     // Cleanup
     fs.unlinkSync(tmpFile);
     fs.rmSync(extractDir, { recursive: true, force: true });
@@ -328,6 +314,10 @@ async function install({
     console.error(`Installation failed: ${err.message}`);
     process.exit(1);
   }
+
+  // Materialize the baseline from the verified binary. Release archives no
+  // longer need to carry a duplicate Skill package.
+  await prepareLocalSkills({ binaryPath: binPath });
 
   // Install agent skills globally for detected tools such as Codex and Claude.
   await installAgentSkills({ required: requireSkills });
@@ -373,6 +363,7 @@ if (require.main === module) {
 module.exports = {
   install,
   installSkills,
+  materializeEmbeddedSkills,
   buildSkillsInstallArgs,
   isNpxPostinstall,
   BIN_DIR,

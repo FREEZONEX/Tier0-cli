@@ -39,6 +39,29 @@ func TestPerformNpmVerifiesInstalledVersionSuccess(t *testing.T) {
 	}
 }
 
+func TestPerformUpToDateRepairsEmbeddedSkill(t *testing.T) {
+	restore := stubUpgradeGlobals(t, "tier0 version v9.9.9\n", 0)
+	defer restore()
+
+	version.BuildVersion = "v9.9.9"
+	prepared := false
+	prepareUpgradeSkill = func(path string) (string, string) {
+		prepared = true
+		if path != "" {
+			t.Fatalf("prepareUpgradeSkill path = %q, want PATH lookup", path)
+		}
+		return "synced", ""
+	}
+
+	result, err := Perform(Options{})
+	if err != nil {
+		t.Fatalf("Perform returned error: %v", err)
+	}
+	if !result.UpToDate || !prepared || result.SkillStatus != "synced" {
+		t.Fatalf("unexpected up-to-date repair result: %#v, prepared=%t", result, prepared)
+	}
+}
+
 func TestPerformNpmVerificationFailureReturnsError(t *testing.T) {
 	restore := stubUpgradeGlobals(t, "", 137)
 	defer restore()
@@ -85,6 +108,7 @@ func stubUpgradeGlobals(t *testing.T, versionOutput string, exitCode int) func()
 	oldRunNpmInstall := runNpmInstall
 	oldExecLookPath := execLookPath
 	oldExecCommandContext := execCommandContext
+	oldPrepareUpgradeSkill := prepareUpgradeSkill
 	oldOutput := os.Getenv("TIER0_TEST_VERSION_OUTPUT")
 	oldExitCode := os.Getenv("TIER0_TEST_EXIT_CODE")
 	_, hadOutput := os.LookupEnv("TIER0_TEST_VERSION_OUTPUT")
@@ -108,6 +132,7 @@ func stubUpgradeGlobals(t *testing.T, versionOutput string, exitCode int) func()
 		return "tier0-test-helper", nil
 	}
 	execCommandContext = fakeExecCommandContext
+	prepareUpgradeSkill = func(string) (string, string) { return "synced", "" }
 	os.Setenv("TIER0_TEST_VERSION_OUTPUT", versionOutput)
 	os.Setenv("TIER0_TEST_EXIT_CODE", fmt.Sprintf("%d", exitCode))
 
@@ -119,6 +144,7 @@ func stubUpgradeGlobals(t *testing.T, versionOutput string, exitCode int) func()
 		runNpmInstall = oldRunNpmInstall
 		execLookPath = oldExecLookPath
 		execCommandContext = oldExecCommandContext
+		prepareUpgradeSkill = oldPrepareUpgradeSkill
 		if hadOutput {
 			os.Setenv("TIER0_TEST_VERSION_OUTPUT", oldOutput)
 		} else {
