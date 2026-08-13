@@ -12,7 +12,7 @@ import (
 // runtime-only whitelist. Maintainer snapshots and repository metadata are not
 // embedded.
 //
-//go:embed content
+//go:embed content content/_source.json
 var content embed.FS
 
 // FS returns the root of the embedded Tier0 Skill package.

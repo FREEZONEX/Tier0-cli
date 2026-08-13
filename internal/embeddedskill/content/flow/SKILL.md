@@ -1,6 +1,6 @@
 ---
 name: tier0-flow
-description: "Tier0 Flow and Node-RED HTTP ingress operations: list, create, update, delete, export, and deploy SourceFlow/EventFlow canvas JSON, or expose and call user-defined http in endpoints through /flow/source or /flow/event. Do not use for Node-RED Admin API access."
+description: "Tier0 Flow management for Node-RED: list, create, update, delete, export, and deploy SourceFlow and EventFlow canvas JSON."
 ---
 
 # tier0-flow
@@ -13,14 +13,12 @@ Use this skill for Tier0 Node-RED Flow management.
 - The user wants to export Node-RED canvas JSON.
 - The user wants to deploy or replace a Node-RED canvas.
 - The user asks about SourceFlow or EventFlow state.
-- The user wants to expose or call a webhook or application endpoint implemented with Node-RED `http in` and `http response` nodes.
 
 ## Do Not Use When
 
 - The user wants current UNS topic values. Use `uns/references/read.md`.
 - The user wants to directly drag nodes in the Node-RED UI. The CLI imports and exports JSON; UI editing happens in a browser.
 - The user wants protocol mapping details. Read the matching protocol reference first.
-- The user wants Node-RED Admin API access. The gateway blocks Admin paths; use the CLI Flow management commands instead.
 
 ## Non-Negotiable Rules
 
@@ -32,8 +30,6 @@ Use this skill for Tier0 Node-RED Flow management.
 6. Deleting a Flow stops the related Node-RED container.
 7. Do not construct deploy payloads before reading `references/deploy.md`.
 8. Preserve the backend-created Tier0 `mqtt-broker` config node. Do not create or replace it.
-9. Use `/flow/{source|event}/**` only for user-defined `http in` endpoints. Never use it for Flow management or Node-RED Admin APIs.
-10. Call `http in` endpoints with `tier0 api`; do not add or assume a separate `flow invoke` command.
 
 ## Flow Types
 
@@ -53,7 +49,6 @@ Use this skill for Tier0 Node-RED Flow management.
 | Delete Flow | `references/delete.md` | High, requires `--yes` |
 | Export Node-RED canvas | `references/data.md` | Low |
 | Deploy Node-RED canvas | `references/deploy.md` | High, requires backup and `--yes` |
-| Expose or call an `http in` endpoint or webhook | `references/http-endpoints.md` | Depends on the endpoint's business effect |
 
 ## Protocol References
 
@@ -105,3 +100,50 @@ With `--json`, read failures from stderr and branch on `error.type`,
 `error.subtype`, and `error.param`. Fix `invalid_argument` at the named parameter
 instead of retrying unchanged. Exit code 10 with `confirmation_required` means
 the user must approve the high-risk operation before `--yes` is added.
+
+## 可调用接口速查（curl）
+
+> AI 直接按此表写 curl 即可。host = `TIER0_API_HOST`，鉴权 `Authorization: Bearer <TIER0_API_KEY>`。
+
+### A. 平台管理接口（`POST /openapi/v1/flow/*`，CLI 已封装，亦可 curl）
+
+| Path | 请求体 | 返回 |
+|---|---|---|
+| `POST /openapi/v1/flow/list` | `{"keyword":"","flowType":"source"\|"event"}`（flowType 不传返回全部） | `{code,msg,data:{list:[]}}` |
+| `POST /openapi/v1/flow/get` | `{"id":1}` | `{code,msg,data:{...FlowInfo}}` |
+| `POST /openapi/v1/flow/create` | `{"flowName":"x","flowType":"source"\|"event","description":"","template":""}` | `{code,msg,data:{id}}` |
+| `POST /openapi/v1/flow/update` | `{"id":1,"flowName":"","description":"","template":"","isFavorite":0}` | `{code,msg,data:{success}}` |
+| `POST /openapi/v1/flow/delete` | `{"ids":[1]}` | `{code,msg,data:{success}}` |
+| `POST /openapi/v1/flow/flowdata` | `{"id":1}` | `{code,msg,data:{rev,flows}}` |
+| `POST /openapi/v1/flow/nodes` | `{"flowType":"source"\|"event"}` | `{code,msg,data:{nodes:[]}}` |
+| `POST /openapi/v1/flow/deploy` | `{"id":1,"flowsJson":"[...]"}` | `{code,msg,data:{flowId}}` |
+
+```bash
+curl -H "Authorization: Bearer $TIER0_API_KEY" -H "Content-Type: application/json" \
+  -d '{"flowType":"event"}' "http://$TIER0_API_HOST/openapi/v1/flow/list"
+```
+
+### B. Node-RED 原生接口（`/flow/{source|event}/**`，高级/运行时直读）
+
+| Method | Path | 说明 |
+|---|---|---|
+| GET | `/flow/{source\|event}/flows` | 原生 flows（含运行时 rev，非平台合成） |
+| GET | `/flow/{source\|event}/flow/:id` | 单个 flow 节点与 configs |
+| GET | `/flow/{source\|event}/nodes` | 已安装节点类型列表 |
+| GET | `/flow/{source\|event}/settings`、`/status` | 运行时设置 / 状态 |
+| POST | `/flow/{source\|event}/flows` | 全量部署 |
+| POST | `/flow/{source\|event}/flow` | 创建 flow |
+| PUT | `/flow/{source\|event}/flow/:id` | 更新 flow |
+| DELETE | `/flow/{source\|event}/flow/:id` | 删除 flow |
+
+```bash
+curl -H "Authorization: Bearer $TIER0_API_KEY" \
+  "http://$TIER0_API_HOST/flow/source/flows"      # 读 sourceflow 原生 flows
+curl -H "Authorization: Bearer $TIER0_API_KEY" \
+  "http://$TIER0_API_HOST/flow/event/nodes"       # 读 eventflow 节点类型
+```
+
+- 鉴权：`Authorization: Bearer <TIER0_API_KEY>`（或 `X-API-Key`）；full_access 读写全开，read_only 只读；
+- 与 `tier0 flow data` 的关系：备份/导出仍用 CLI（平台侧数据），原生接口是运行时直读；
+- 风险：写操作（部署/更新/删除）绕过平台校验与版本快照，改动前先 `tier0 flow data --out backup.json`；
+- 这些路径非 CLI 内置命令，仅限高级/自动化场景，默认仍用 `tier0 flow ...`。

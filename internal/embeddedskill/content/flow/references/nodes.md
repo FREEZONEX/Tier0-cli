@@ -31,8 +31,6 @@ tier0 flow nodes --type SourceFlow --json
 | MQTT input | `mqtt in` |
 | MQTT output | `mqtt out` |
 | MQTT broker config | `mqtt-broker` |
-| HTTP ingress | `http in` |
-| HTTP response | `http response` |
 | HTTP request | `http request` |
 | Modbus read | Usually from `node-red-contrib-modbus`; verify with `flow nodes` |
 | OPC-UA client | Usually from `node-red-contrib-opcua`; verify with `flow nodes` |

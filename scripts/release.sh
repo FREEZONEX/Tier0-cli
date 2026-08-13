@@ -9,6 +9,7 @@ set -euo pipefail
 #   GITHUB_TOKEN  - GitHub Personal Access Token
 #   PARALLEL      - parallel build count (default 8)
 #   BUILD_ONLY    - set to 1 to build and verify packages without publishing
+#   PREFLIGHT_ONLY - set to 1 to sync/check Skill and stop before build/publish
 #   TARGET_PLATFORMS - optional space-separated GOOS/GOARCH list for local tests
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -24,23 +25,23 @@ BUILD_DIR="${ROOT}/dist/release-${VERSION}"
 RELEASE_DIR="${BUILD_DIR}/packages"
 PARALLEL="${PARALLEL:-8}"
 BUILD_ONLY="${BUILD_ONLY:-0}"
+PREFLIGHT_ONLY="${PREFLIGHT_ONLY:-0}"
 TARGET_PLATFORMS="${TARGET_PLATFORMS:-}"
 
-# Skill source directory, normally the sibling Tier0-skill checkout.
-# SKILL_SRC can override this in release automation.
-SKILL_SRC="${SKILL_SRC:-${ROOT}/../Tier0-skill}"
-if [[ ! -f "${SKILL_SRC}/SKILL.md" && -f "${ROOT}/../skill/SKILL.md" ]]; then
-  SKILL_SRC="${ROOT}/../skill"
-fi
-if [[ -f "${SKILL_SRC}/SKILL.md" ]]; then
-  # When the source checkout is available, refuse to release stale embedded
-  # content. Sync and review it explicitly before running this script.
-  SKILL_SRC="${SKILL_SRC}" bash "${ROOT}/scripts/sync-embedded-skill.sh" --check
-elif [[ -f "${ROOT}/internal/embeddedskill/content/SKILL.md" ]]; then
-  echo "[release] external Skill source not found; using checked-in embedded baseline"
-else
-  echo "[release] error: neither external nor embedded Tier0 Skill content was found" >&2
+# Always synchronize the latest Tier0-skill main commit before building. A
+# formal release must use a snapshot already committed to the CLI repository so
+# the tag source and binary are reproducible. BUILD_ONLY may test a fresh,
+# uncommitted snapshot locally.
+bash "${ROOT}/scripts/sync-embedded-skill.sh"
+embedded_status="$(git -C "${ROOT}" status --porcelain --untracked-files=all -- internal/embeddedskill/content)"
+if [[ "${BUILD_ONLY}" != "1" ]] && [[ -n "${embedded_status}" ]]; then
+  echo "[release] the latest Tier0 Skill changed the embedded snapshot" >&2
+  echo "[release] review, commit, and push internal/embeddedskill/content, then rerun release" >&2
   exit 1
+fi
+if [[ "${PREFLIGHT_ONLY}" == "1" ]]; then
+  echo "[release] preflight passed; build and publish skipped"
+  exit 0
 fi
 
 # Excluded platforms that are not native or not needed.
@@ -148,7 +149,7 @@ build_one() {
   echo "OK:${platform}:${name}"
 }
 export -f build_one platform_name
-export ROOT BUILD_DIR VERSION SKILL_SRC
+export ROOT BUILD_DIR VERSION
 
 # Parallel build.
 BUILD_OK=0

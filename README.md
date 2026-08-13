@@ -203,12 +203,22 @@ Skill example validation scans the sibling `Tier0-skill/` repository, extracts `
 go test ./cmd -run TestSkillExamples
 ```
 
-After changing the sibling Skill repository, refresh and verify the compiled baseline:
+Refresh the compiled baseline from the latest `Tier0-skill/main` commit:
 
 ```bash
 bash scripts/sync-embedded-skill.sh
 bash scripts/sync-embedded-skill.sh --check
 ```
+
+For local Skill development, opt in to a local checkout explicitly:
+
+```bash
+bash scripts/sync-embedded-skill.sh --local ../Tier0-skill
+```
+
+The sync records the full source commit in `_source.json`. Formal releases also
+sync from GitHub by default and stop if that changes the checked-in snapshot;
+review, commit, and push the generated snapshot before rerunning the release.
 
 ## Release
 
@@ -218,6 +228,12 @@ Build one local package without GitHub or npm credentials:
 
 ```bash
 BUILD_ONLY=1 TARGET_PLATFORMS=windows/amd64 bash scripts/release.sh vX.Y.Z
+```
+
+Check the latest GitHub Skill snapshot without building or publishing:
+
+```bash
+PREFLIGHT_ONLY=1 bash scripts/release.sh vX.Y.Z
 ```
 
 ```bash
