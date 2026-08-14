@@ -313,6 +313,7 @@ release_github() {
       upload_url=$(echo "$existing_resp" | grep -o '"upload_url": "[^"]*' | cut -d'"' -f4 | sed 's/{?name,label}//')
     fi
     if [[ -n "$upload_url" ]]; then
+      release_resp="$existing_resp"
       echo "[github] Found existing Release; uploading additional assets..."
     fi
   fi
@@ -337,6 +338,40 @@ release_github() {
   for asset in "${RELEASE_DIR}"/*; do
     local fname
     fname=$(basename "$asset")
+
+    # Make retries idempotent. GitHub rejects duplicate asset names with HTTP
+    # 422, so keep an identical remote asset or replace a stale one before
+    # uploading. The release response includes each asset's numeric id and,
+    # on current GitHub APIs, its sha256 digest.
+    local existing_asset_info existing_asset_id existing_asset_digest local_asset_digest
+    existing_asset_info=$(printf '%s' "$release_resp" | node -e '
+      const fs = require("fs");
+      const name = process.argv[1];
+      const release = JSON.parse(fs.readFileSync(0, "utf8"));
+      const asset = (release.assets || []).find((item) => item.name === name);
+      if (asset) process.stdout.write(String(asset.id) + "\t" + (asset.digest || ""));
+    ' "$fname" 2>/dev/null || true)
+    if [[ -n "$existing_asset_info" ]]; then
+      IFS=$'\t' read -r existing_asset_id existing_asset_digest <<< "$existing_asset_info"
+      local_asset_digest="sha256:$(sha256sum "$asset" | awk '{print $1}')"
+      if [[ -n "$existing_asset_digest" && "$existing_asset_digest" == "$local_asset_digest" ]]; then
+        echo "[github] Asset ${fname} already uploaded with matching checksum; skipping"
+        continue
+      fi
+
+      echo -n "[github] Replacing ${fname} ... "
+      local delete_code
+      delete_code=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
+        -H "Authorization: token ${GITHUB_TOKEN}" \
+        -H "Accept: application/vnd.github.v3+json" \
+        "https://api.github.com/repos/${repo}/releases/assets/${existing_asset_id}")
+      if [[ "$delete_code" != "204" && "$delete_code" != "404" ]]; then
+        echo "FAILED to remove existing asset (HTTP ${delete_code})"
+        return 1
+      fi
+      echo "removed existing asset"
+    fi
+
     echo -n "[github] Uploading ${fname} ... "
     local upload_code
     if ! upload_code=$(curl -sS -o /dev/null -w "%{http_code}" -X POST \
