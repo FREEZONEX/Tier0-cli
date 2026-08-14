@@ -38,8 +38,14 @@ TARGET_PLATFORMS="${TARGET_PLATFORMS:-}"
 # the tag source and binary are reproducible. BUILD_ONLY may test a fresh,
 # uncommitted snapshot locally.
 bash "${ROOT}/scripts/sync-embedded-skill.sh"
-embedded_status="$(git -C "${ROOT}" status --porcelain --untracked-files=all -- internal/embeddedskill/content)"
-if [[ "${BUILD_ONLY}" != "1" ]] && [[ -n "${embedded_status}" ]]; then
+embedded_changed="0"
+if ! git -C "${ROOT}" diff --quiet HEAD -- internal/embeddedskill/content; then
+  embedded_changed="1"
+fi
+if [[ -n "$(git -C "${ROOT}" ls-files --others --exclude-standard -- internal/embeddedskill/content)" ]]; then
+  embedded_changed="1"
+fi
+if [[ "${BUILD_ONLY}" != "1" ]] && [[ "${embedded_changed}" == "1" ]]; then
   echo "[release] the latest Tier0 Skill changed the embedded snapshot" >&2
   echo "[release] review, commit, and push internal/embeddedskill/content, then rerun release" >&2
   exit 1
