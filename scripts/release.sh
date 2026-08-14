@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Tier0 CLI cross-platform release build script
-# Usage: bash scripts/release.sh [VERSION]
+# Usage: bash scripts/release.sh VERSION
 # Example: bash scripts/release.sh v0.2.0
 #
 # Environment variables (recommended in .env; loaded automatically):
@@ -12,6 +12,12 @@ set -euo pipefail
 #   PREFLIGHT_ONLY - set to 1 to sync/check Skill and stop before build/publish
 #   TARGET_PLATFORMS - optional space-separated GOOS/GOARCH list for local tests
 
+if [[ $# -lt 1 || -z "${1:-}" ]]; then
+  echo "Usage: bash scripts/release.sh vX.Y.Z" >&2
+  exit 2
+fi
+
+VERSION="$1"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Load .env automatically when present.
@@ -20,7 +26,6 @@ if [[ -f "${ROOT}/.env" ]]; then
   source "${ROOT}/.env"
 fi
 
-VERSION="${1:-v0.1.0}"
 BUILD_DIR="${ROOT}/dist/release-${VERSION}"
 RELEASE_DIR="${BUILD_DIR}/packages"
 PARALLEL="${PARALLEL:-8}"
