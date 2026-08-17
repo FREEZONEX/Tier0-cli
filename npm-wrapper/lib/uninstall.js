@@ -9,6 +9,8 @@ const TIER0_DIR = path.join(os.homedir(), '.tier0');
 const BIN_DIR = path.join(TIER0_DIR, 'bin');
 const SKILLS_DIR = path.join(TIER0_DIR, 'skills');
 const CONFIG_FILE = path.join(TIER0_DIR, 'config.json');
+const AGENT_SKILL_DIR = path.join(os.homedir(), '.agents', 'skills', 'tier0');
+const NPM_PACKAGE = '@tier0/cli';
 
 function binaryName() {
   return process.platform === 'win32' ? 'tier0.exe' : 'tier0';
@@ -39,23 +41,68 @@ function removeFile(file, label) {
   return false;
 }
 
-function uninstallAgentSkills() {
+function buildSkillsRemoveArgs() {
+  return ['-y', '--package=skills', '--', 'skills', 'remove', 'tier0', '-y', '-g'];
+}
+
+function uninstallAgentSkills({ runner = runCommand, skillDir = AGENT_SKILL_DIR } = {}) {
+  if (!fs.existsSync(skillDir)) {
+    console.log('  Tier0 Agent Skill is not installed.');
+    return false;
+  }
+
   console.log('\nRemoving Tier0 agent skills...');
   try {
-    runCommand('npx', ['-y', '--package=skills', '--', 'skills', 'remove', 'tier0', '-y', '-g'], { stdio: 'inherit' });
+    runner('npx', buildSkillsRemoveArgs(), { stdio: 'inherit' });
+    if (fs.existsSync(skillDir)) {
+      throw new Error(`skills remove reported success but ${skillDir} still exists`);
+    }
     console.log('✓ Tier0 agent skills removed.');
+    return true;
   } catch (err) {
-    console.warn(`⚠ Agent skills removal failed (non-fatal): ${err.message}`);
-    console.warn('  You can remove manually: npx -y skills remove tier0 -y -g');
+    throw new Error(
+      `Agent Skills removal failed: ${err.message}\n` +
+      'Run manually: npx -y --package=skills -- skills remove tier0 -y -g'
+    );
   }
+}
+
+function uninstallGlobalNpmPackage({ runner = runCommand } = {}) {
+  let npmRoot;
+  try {
+    npmRoot = String(runner('npm', ['root', '-g'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      encoding: 'utf8',
+    })).trim();
+  } catch (_) {
+    return false;
+  }
+
+  const packageFile = path.join(npmRoot, '@tier0', 'cli', 'package.json');
+  if (!fs.existsSync(packageFile)) return false;
+
+  runner('npm', ['uninstall', '-g', NPM_PACKAGE], {
+    stdio: 'inherit',
+    env: { ...process.env, TIER0_SKIP_UNINSTALL: '1' },
+  });
+  if (fs.existsSync(packageFile)) {
+    throw new Error(`npm reported success but ${path.dirname(packageFile)} still exists`);
+  }
+  console.log(`✓ Removed global npm package: ${NPM_PACKAGE}`);
+  return true;
 }
 
 /**
  * @param {object} opts
  * @param {boolean} [opts.purge=false]  - also delete config.json (credentials)
- * @param {boolean} [opts.keepSkills=false] - skip agent skills removal
+ * @param {boolean} [opts.removeSkills=false] - also remove agent skills
+ * @param {boolean} [opts.removeNpmPackage=true] - remove a global npm wrapper
  */
-async function uninstall({ purge = false, keepSkills = false } = {}) {
+async function uninstall({
+  purge = false,
+  removeSkills = false,
+  removeNpmPackage = true,
+} = {}) {
   console.log('Uninstalling tier0 CLI...\n');
 
   let removed = 0;
@@ -90,9 +137,17 @@ async function uninstall({ purge = false, keepSkills = false } = {}) {
     console.log('  Run with --purge to also remove credentials.');
   }
 
-  // Remove agent skills
-  if (!keepSkills) {
+  // Agent Skills have their own lifecycle and are preserved by default.
+  if (removeSkills) {
     uninstallAgentSkills();
+  } else {
+    console.log('\n  Agent Skill kept. Use --remove-skills to delete it.');
+  }
+
+  // Explicit npx/CLI uninstall should also remove a wrapper left by an npm
+  // upgrade. The npm preuninstall lifecycle disables this to avoid recursion.
+  if (removeNpmPackage && uninstallGlobalNpmPackage()) {
+    removed++;
   }
 
   if (removed === 0) {
@@ -106,7 +161,7 @@ async function uninstall({ purge = false, keepSkills = false } = {}) {
 if (require.main === module) {
   const args = process.argv.slice(2);
   const purge = args.includes('--purge');
-  const keepSkills = args.includes('--keep-skills');
+  const removeSkills = args.includes('--remove-skills');
 
   // Skip when invoked by npm/yarn uninstall in CI/non-interactive environments
   // (TIER0_SKIP_UNINSTALL=1 lets automated tooling bypass the hook)
@@ -114,10 +169,19 @@ if (require.main === module) {
     process.exit(0);
   }
 
-  uninstall({ purge, keepSkills }).catch(err => {
+  uninstall({
+    purge,
+    removeSkills,
+    removeNpmPackage: process.env.npm_lifecycle_event !== 'preuninstall',
+  }).catch(err => {
     console.error(err);
     process.exit(1);
   });
 }
 
-module.exports = { uninstall };
+module.exports = {
+  buildSkillsRemoveArgs,
+  uninstall,
+  uninstallAgentSkills,
+  uninstallGlobalNpmPackage,
+};

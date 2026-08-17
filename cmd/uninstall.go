@@ -1,19 +1,34 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
-	"github.com/spf13/cobra"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/spf13/cobra"
 )
+
+const npmPackageName = "@tier0/cli"
+
+var uninstallLookPath = exec.LookPath
+var uninstallUserHomeDir = os.UserHomeDir
+
+var uninstallRunCommand = func(name string, args []string, env []string) ([]byte, error) {
+	command := exec.Command(name, args...)
+	if env != nil {
+		command.Env = env
+	}
+	return command.CombinedOutput()
+}
 
 var uninstallCmd = &cobra.Command{
 	Use:   "uninstall",
-	Short: "Uninstall tier0 CLI and agent skills",
-	Long:  "Remove the tier0 binary, bundled skills, and Cursor/Claude agent skills.\nThe config file (~/.tier0/config.json) is kept by default; use --purge to delete it.",
+	Short: "Uninstall tier0 CLI",
+	Long:  "Remove the tier0 binary, bundled Skill baseline, and global npm package.\nAgent Skills and config (~/.tier0/config.json) are kept by default. Use --remove-skills and --purge to delete them.",
 
 	RunE: runUninstall,
 }
@@ -21,16 +36,20 @@ var uninstallCmd = &cobra.Command{
 func init() {
 	uninstallCmd.Flags().Bool("purge", false,
 		"Also delete config file (credentials)")
+	uninstallCmd.Flags().Bool("remove-skills", false,
+		"Also remove the Tier0 Skill from detected AI agents")
 	uninstallCmd.Flags().Bool("keep-skills", false,
-		"Skip agent skills removal")
+		"Keep agent skills (deprecated; this is now the default)")
+	_ = uninstallCmd.Flags().MarkDeprecated("keep-skills",
+		"agent skills are now kept by default; use --remove-skills to delete them")
 }
 
 func runUninstall(cmd *cobra.Command, args []string) error {
 	purge, _ := cmd.Flags().GetBool("purge")
-	keepSkills, _ := cmd.Flags().GetBool("keep-skills")
+	removeSkills, _ := cmd.Flags().GetBool("remove-skills")
 	stdout := cmd.OutOrStdout()
 
-	home, err := os.UserHomeDir()
+	home, err := uninstallUserHomeDir()
 	if err != nil {
 		return internalCommandError(cmd, "cannot determine home directory: "+err.Error(), err)
 	}
@@ -66,6 +85,13 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 		removed++
 	}
 
+	// An npm-based upgrade leaves a global wrapper package behind. Remove it
+	// with the lifecycle cleanup disabled so this command does not recurse.
+	npmRemoved, npmErr := removeGlobalNpmPackage(stdout)
+	if npmRemoved {
+		removed++
+	}
+
 	// Config handling
 	if purge {
 		if removeFile(stdout, configFile, "config (credentials)") {
@@ -81,21 +107,37 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 			configFile)
 	}
 
-	// Remove agent skills
-	if !keepSkills {
+	// Agent Skills have their own lifecycle and are preserved by default. This
+	// mirrors other CLIs that let users update/reuse Skills independently.
+	var skillsErr error
+	if removeSkills {
 		fmt.Fprintln(stdout, "\nRemoving agent skills...")
-		if err := runNpxSkillsRemove(); err != nil {
+		if err := runNpxSkillsRemove(home); err != nil {
+			skillsErr = err
 			fmt.Fprintf(stdout,
-				"⚠ Agent skills removal failed (non-fatal): %s\n  Run manually: npx skills remove FREEZONEX/Tier0-skill\n",
+				"⚠ Agent skills removal failed: %s\n  Run manually: npx -y --package=skills -- skills remove tier0 -y -g\n",
 				err)
 		} else {
 			fmt.Fprintln(stdout, "✓ Agent skills removed.")
 		}
+	} else {
+		fmt.Fprintln(stdout, "\n  Agent Skill kept. Use --remove-skills to delete it.")
 	}
 
 	if removed == 0 {
 		fmt.Fprintln(stdout, "\ntier0 CLI was not installed (nothing to remove).")
-	} else {
+	}
+	if npmErr != nil || skillsErr != nil {
+		parts := make([]string, 0, 2)
+		if npmErr != nil {
+			parts = append(parts, npmErr.Error())
+		}
+		if skillsErr != nil {
+			parts = append(parts, skillsErr.Error())
+		}
+		return internalCommandError(cmd, "uninstall incomplete: "+strings.Join(parts, "; "), nil)
+	}
+	if removed > 0 {
 		fmt.Fprintln(stdout, "\ntier0 CLI uninstalled successfully.")
 	}
 	return nil
@@ -168,9 +210,84 @@ func removeDir(stdout interface{ Write([]byte) (int, error) }, path, label strin
 	return true
 }
 
-func runNpxSkillsRemove() error {
-	cmd := exec.Command("npx", "--yes", "skills", "remove", "FREEZONEX/Tier0-skill")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+func skillsRemoveArgs() []string {
+	return []string{"-y", "--package=skills", "--", "skills", "remove", "tier0", "-y", "-g"}
+}
+
+func runNpxSkillsRemove(home string) error {
+	agentSkillDir := filepath.Join(home, ".agents", "skills", "tier0")
+	if _, err := os.Stat(agentSkillDir); os.IsNotExist(err) {
+		return nil
+	}
+
+	npxPath, err := uninstallLookPath("npx")
+	if err != nil {
+		return fmt.Errorf("npx is required to remove Agent Skills: %w", err)
+	}
+	output, err := uninstallRunCommand(npxPath, skillsRemoveArgs(), nil)
+	if err != nil {
+		detail := strings.TrimSpace(string(output))
+		if detail == "" {
+			detail = err.Error()
+		}
+		return fmt.Errorf("skills remove failed: %s", detail)
+	}
+	if _, err := os.Stat(agentSkillDir); err == nil {
+		return fmt.Errorf("skills remove reported success but %s still exists", agentSkillDir)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("cannot verify Agent Skill removal: %w", err)
+	}
+	return nil
+}
+
+func removeGlobalNpmPackage(stdout interface{ Write([]byte) (int, error) }) (bool, error) {
+	npmPath, err := uninstallLookPath("npm")
+	if err != nil {
+		return false, nil
+	}
+
+	output, err := uninstallRunCommand(npmPath, []string{"root", "-g", "--json"}, nil)
+	if err != nil {
+		// Older npm versions do not support JSON for `npm root`; retry with its
+		// stable text output before deciding that no global package is present.
+		output, err = uninstallRunCommand(npmPath, []string{"root", "-g"}, nil)
+		if err != nil {
+			return false, fmt.Errorf("cannot locate global npm packages: %s", commandFailure(output, err))
+		}
+	}
+
+	npmRoot := strings.TrimSpace(string(output))
+	if strings.HasPrefix(npmRoot, "\"") {
+		var decoded string
+		if json.Unmarshal(output, &decoded) == nil {
+			npmRoot = decoded
+		}
+	}
+	packageFile := filepath.Join(npmRoot, "@tier0", "cli", "package.json")
+	if _, err := os.Stat(packageFile); os.IsNotExist(err) {
+		return false, nil
+	} else if err != nil {
+		return false, fmt.Errorf("cannot inspect global npm package: %w", err)
+	}
+
+	env := append(os.Environ(), "TIER0_SKIP_UNINSTALL=1")
+	output, err = uninstallRunCommand(npmPath, []string{"uninstall", "-g", npmPackageName}, env)
+	if err != nil {
+		return false, fmt.Errorf("global npm package removal failed: %s", commandFailure(output, err))
+	}
+	if _, err := os.Stat(packageFile); err == nil {
+		return false, fmt.Errorf("npm reported success but global package still exists at %s", filepath.Dir(packageFile))
+	} else if !os.IsNotExist(err) {
+		return false, fmt.Errorf("cannot verify global npm package removal: %w", err)
+	}
+	fmt.Fprintf(stdout, "✓ Removed global npm package: %s\n", npmPackageName)
+	return true, nil
+}
+
+func commandFailure(output []byte, err error) string {
+	detail := strings.TrimSpace(string(output))
+	if detail != "" {
+		return detail
+	}
+	return err.Error()
 }

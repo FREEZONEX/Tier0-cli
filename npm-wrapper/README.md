@@ -23,6 +23,17 @@ Run directly:
 npx @tier0/cli@latest --help
 ```
 
+## Uninstall
+
+```bash
+npx @tier0/cli@latest uninstall
+npx @tier0/cli@latest uninstall --purge
+npx @tier0/cli@latest uninstall --remove-skills
+```
+
+The Agent Skill and credentials are kept by default. Use `--remove-skills` to
+delete the Skill and `--purge` to delete credentials.
+
 ## How It Works
 
 - Detects the current OS and CPU architecture.

@@ -173,8 +173,13 @@ Tier0 CLI output is English-only. The legacy `--lang en` flag is accepted for co
 ```bash
 npx @tier0/cli@latest uninstall
 npx @tier0/cli@latest uninstall --purge
-npx @tier0/cli@latest uninstall --keep-skills
+npx @tier0/cli@latest uninstall --remove-skills
+npx @tier0/cli@latest uninstall --purge --remove-skills
 ```
+
+Agent Skills are kept by default so they can be updated or reused
+independently. Add `--remove-skills` to remove the globally installed `tier0`
+Skill from detected agents. Add `--purge` to also delete credentials.
 
 Global npm uninstall:
 
@@ -186,7 +191,7 @@ Manual cleanup:
 
 ```bash
 rm -rf ~/.tier0/bin/tier0 ~/.tier0/skills
-npx skills remove FREEZONEX/Tier0-skill
+npx -y --package=skills -- skills remove tier0 -y -g
 ```
 
 ## Development

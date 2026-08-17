@@ -16,11 +16,11 @@ async function main() {
     process.exit(0);
   }
 
-  // `npx @tier0/cli@latest uninstall [--purge] [--keep-skills]`
+  // `npx @tier0/cli@latest uninstall [--purge] [--remove-skills]`
   if (args[0] === 'uninstall') {
     const purge = args.includes('--purge');
-    const keepSkills = args.includes('--keep-skills');
-    await uninstall({ purge, keepSkills });
+    const removeSkills = args.includes('--remove-skills');
+    await uninstall({ purge, removeSkills });
     process.exit(0);
   }
 
