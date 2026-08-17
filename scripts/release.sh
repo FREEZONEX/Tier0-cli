@@ -11,14 +11,32 @@ set -euo pipefail
 #   BUILD_ONLY    - set to 1 to build and verify packages without publishing
 #   PREFLIGHT_ONLY - set to 1 to sync/check Skill and stop before build/publish
 #   TARGET_PLATFORMS - optional space-separated GOOS/GOARCH list for local tests
+#   GITHUB_CONNECT_TIMEOUT - GitHub connection timeout in seconds (default 15)
+#   GITHUB_API_MAX_TIME - maximum GitHub API request time in seconds (default 60)
+#   GITHUB_UPLOAD_MAX_TIME - maximum time per asset upload attempt (default 180)
+#   GITHUB_UPLOAD_RETRIES - asset upload attempts after remote reconciliation (default 3)
+#   GITHUB_RETRY_DELAY - delay between upload attempts in seconds (default 3)
 
 if [[ $# -lt 1 || -z "${1:-}" ]]; then
   echo "Usage: bash scripts/release.sh vX.Y.Z" >&2
   exit 2
 fi
 
+# Bash may read a script incrementally while it runs. Execute an immutable
+# temporary snapshot so edits, pulls, or branch switches cannot corrupt an
+# in-flight release after assets or npm have already been published.
+if [[ -z "${_TIER0_RELEASE_SCRIPT_SNAPSHOT:-}" ]]; then
+  release_script_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  release_script_snapshot=$(mktemp)
+  cp "${BASH_SOURCE[0]}" "${release_script_snapshot}"
+  export _TIER0_RELEASE_SCRIPT_SNAPSHOT="${release_script_snapshot}"
+  export _TIER0_RELEASE_ROOT="${release_script_root}"
+  exec bash "${release_script_snapshot}" "$@"
+fi
+
 VERSION="$1"
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="${_TIER0_RELEASE_ROOT}"
+trap 'rm -f -- "${_TIER0_RELEASE_SCRIPT_SNAPSHOT:-}"' EXIT
 
 # Load .env automatically when present.
 if [[ -f "${ROOT}/.env" ]]; then
@@ -32,6 +50,26 @@ PARALLEL="${PARALLEL:-8}"
 BUILD_ONLY="${BUILD_ONLY:-0}"
 PREFLIGHT_ONLY="${PREFLIGHT_ONLY:-0}"
 TARGET_PLATFORMS="${TARGET_PLATFORMS:-}"
+GITHUB_CONNECT_TIMEOUT="${GITHUB_CONNECT_TIMEOUT:-15}"
+GITHUB_API_MAX_TIME="${GITHUB_API_MAX_TIME:-60}"
+GITHUB_UPLOAD_MAX_TIME="${GITHUB_UPLOAD_MAX_TIME:-180}"
+GITHUB_UPLOAD_RETRIES="${GITHUB_UPLOAD_RETRIES:-3}"
+GITHUB_RETRY_DELAY="${GITHUB_RETRY_DELAY:-3}"
+GITHUB_UPLOAD_SPEED_TIME="${GITHUB_UPLOAD_SPEED_TIME:-30}"
+GITHUB_UPLOAD_SPEED_LIMIT="${GITHUB_UPLOAD_SPEED_LIMIT:-1024}"
+
+for setting in \
+  GITHUB_CONNECT_TIMEOUT GITHUB_API_MAX_TIME GITHUB_UPLOAD_MAX_TIME \
+  GITHUB_UPLOAD_RETRIES GITHUB_UPLOAD_SPEED_TIME GITHUB_UPLOAD_SPEED_LIMIT; do
+  if [[ ! "${!setting}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "[release] ${setting} must be a positive integer (got: ${!setting})" >&2
+    exit 2
+  fi
+done
+if [[ ! "${GITHUB_RETRY_DELAY}" =~ ^[0-9]+$ ]]; then
+  echo "[release] GITHUB_RETRY_DELAY must be a non-negative integer (got: ${GITHUB_RETRY_DELAY})" >&2
+  exit 2
+fi
 
 # Always synchronize the latest Tier0-skill main commit before building. A
 # formal release must use a snapshot already committed to the CLI repository so
@@ -222,6 +260,127 @@ echo ""
 # ========================================
 # GitHub Release
 # ========================================
+github_get_release() {
+  local repo="$1"
+  curl -sS \
+    --connect-timeout "${GITHUB_CONNECT_TIMEOUT}" \
+    --max-time "${GITHUB_API_MAX_TIME}" \
+    --retry 2 \
+    --retry-delay "${GITHUB_RETRY_DELAY}" \
+    -H "Authorization: token ${GITHUB_TOKEN}" \
+    -H "Accept: application/vnd.github.v3+json" \
+    "https://api.github.com/repos/${repo}/releases/tags/${VERSION}"
+}
+
+github_asset_info() {
+  local release_json="$1"
+  local fname="$2"
+  printf '%s' "${release_json}" | node -e '
+    const fs = require("fs");
+    const name = process.argv[1];
+    const release = JSON.parse(fs.readFileSync(0, "utf8"));
+    const asset = (release.assets || []).find((item) => item.name === name);
+    if (asset) process.stdout.write(String(asset.id) + "\t" + (asset.digest || ""));
+  ' "${fname}" 2>/dev/null || true
+}
+
+github_delete_asset() {
+  local repo="$1"
+  local asset_id="$2"
+  local delete_code
+  if ! delete_code=$(curl -sS -o /dev/null -w "%{http_code}" -X DELETE \
+    --connect-timeout "${GITHUB_CONNECT_TIMEOUT}" \
+    --max-time "${GITHUB_API_MAX_TIME}" \
+    --retry 2 \
+    --retry-delay "${GITHUB_RETRY_DELAY}" \
+    -H "Authorization: token ${GITHUB_TOKEN}" \
+    -H "Accept: application/vnd.github.v3+json" \
+    "https://api.github.com/repos/${repo}/releases/assets/${asset_id}" 2>/dev/null); then
+    printf '000'
+    return 0
+  fi
+  printf '%s' "${delete_code:-000}"
+}
+
+github_upload_asset() {
+  local repo="$1"
+  local upload_url="$2"
+  local asset="$3"
+  local fname local_asset_digest
+  fname=$(basename "${asset}")
+  local_asset_digest="sha256:$(sha256sum "${asset}" | awk '{print $1}')"
+
+  local attempt
+  for ((attempt = 1; attempt <= GITHUB_UPLOAD_RETRIES; attempt++)); do
+    local response_file upload_code curl_status
+    response_file=$(mktemp)
+    echo "[github] Uploading ${fname} (attempt ${attempt}/${GITHUB_UPLOAD_RETRIES})..."
+
+    curl_status=0
+    upload_code=$(curl --show-error --progress-bar -o "${response_file}" -w "%{http_code}" -X POST \
+      --connect-timeout "${GITHUB_CONNECT_TIMEOUT}" \
+      --max-time "${GITHUB_UPLOAD_MAX_TIME}" \
+      --speed-time "${GITHUB_UPLOAD_SPEED_TIME}" \
+      --speed-limit "${GITHUB_UPLOAD_SPEED_LIMIT}" \
+      -H "Authorization: token ${GITHUB_TOKEN}" \
+      -H "Accept: application/vnd.github.v3+json" \
+      -H "Content-Type: application/octet-stream" \
+      "${upload_url}?name=${fname}" \
+      --data-binary "@${asset}") || curl_status=$?
+    upload_code="${upload_code:-000}"
+
+    if [[ "${curl_status}" == "0" && "${upload_code}" =~ ^2[0-9][0-9]$ ]]; then
+      rm -f "${response_file}"
+      echo "[github] Uploaded ${fname} ... OK"
+      return 0
+    fi
+
+    local api_message
+    api_message=$(node -e '
+      const fs = require("fs");
+      try {
+        const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+        if (body.message) process.stdout.write(String(body.message));
+      } catch (_) {}
+    ' "${response_file}" 2>/dev/null || true)
+    rm -f "${response_file}"
+    echo "[github] Upload attempt failed for ${fname} (curl ${curl_status}, HTTP ${upload_code})"
+    [[ -n "${api_message}" ]] && echo "[github] GitHub response: ${api_message}"
+
+    # A timed-out request may still have completed on GitHub. Reconcile the
+    # remote asset before retrying so we neither duplicate nor replace a valid
+    # upload. Partial/stale assets are removed before the next attempt.
+    local current_release remote_info remote_id remote_digest
+    current_release=""
+    if current_release=$(github_get_release "${repo}" 2>/dev/null); then
+      remote_info=$(github_asset_info "${current_release}" "${fname}")
+      if [[ -n "${remote_info}" ]]; then
+        IFS=$'\t' read -r remote_id remote_digest <<< "${remote_info}"
+        if [[ -n "${remote_digest}" && "${remote_digest}" == "${local_asset_digest}" ]]; then
+          echo "[github] ${fname} completed remotely despite the local upload error; checksum matches"
+          return 0
+        fi
+
+        echo "[github] Removing incomplete/stale remote asset ${fname} before retry..."
+        local delete_code
+        delete_code=$(github_delete_asset "${repo}" "${remote_id}")
+        if [[ "${delete_code}" != "204" && "${delete_code}" != "404" ]]; then
+          echo "[github] Failed to remove stale asset ${fname} (HTTP ${delete_code})"
+          return 1
+        fi
+      fi
+    fi
+
+    if ((attempt < GITHUB_UPLOAD_RETRIES)); then
+      echo "[github] Retrying ${fname} in ${GITHUB_RETRY_DELAY}s..."
+      sleep "${GITHUB_RETRY_DELAY}"
+    fi
+  done
+
+  echo "[github] Upload failed after ${GITHUB_UPLOAD_RETRIES} attempts: ${fname}"
+  return 1
+}
+
 release_github() {
   if [[ -z "${GITHUB_TOKEN:-}" ]]; then
     echo "[github] GITHUB_TOKEN is not set; skipping GitHub Release"
@@ -266,12 +425,18 @@ release_github() {
     return 1
   }
 
-  # Preflight: check api.github.com connectivity with an 8-second timeout.
-  local ping_code
-  ping_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 \
+  # Preflight: fail quickly when api.github.com is unreachable.
+  local ping_code ping_status
+  ping_status=0
+  ping_code=$(curl -s -o /dev/null -w "%{http_code}" \
+    --connect-timeout "${GITHUB_CONNECT_TIMEOUT}" \
+    --max-time "${GITHUB_API_MAX_TIME}" \
     -H "Authorization: token ${GITHUB_TOKEN}" \
     -H "Accept: application/vnd.github.v3+json" \
-    "https://api.github.com/rate_limit" 2>/dev/null || echo "000")
+    "https://api.github.com/rate_limit" 2>/dev/null) || ping_status=$?
+  if [[ "${ping_status}" != "0" ]]; then
+    ping_code="000"
+  fi
   if [[ "$ping_code" == "000" ]]; then
     echo "[github] Failed to create Release (HTTP 000)"
     echo "[github] Common causes:"
@@ -283,15 +448,18 @@ release_github() {
 
   local release_resp http_code
   release_resp=$(curl -s -w "\n__HTTP_CODE__:%{http_code}" -X POST \
+    --connect-timeout "${GITHUB_CONNECT_TIMEOUT}" \
+    --max-time "${GITHUB_API_MAX_TIME}" \
     -H "Authorization: token ${GITHUB_TOKEN}" \
     -H "Accept: application/vnd.github.v3+json" \
     -H "Content-Type: application/json" \
     "https://api.github.com/repos/${repo}/releases" \
-    --data-binary "@${payload_file}")
+    --data-binary "@${payload_file}" 2>/dev/null || true)
   rm -f "$payload_file"
 
-  http_code=$(echo "$release_resp" | grep '__HTTP_CODE__:' | cut -d: -f2)
-  release_resp=$(echo "$release_resp" | grep -v '__HTTP_CODE__:')
+  http_code=$(echo "$release_resp" | grep '__HTTP_CODE__:' | cut -d: -f2 || true)
+  http_code="${http_code:-000}"
+  release_resp=$(echo "$release_resp" | grep -v '__HTTP_CODE__:' || true)
 
   local upload_url
   upload_url=$(echo "$release_resp" | grep -o '"upload_url":"[^"]*' | cut -d'"' -f4 | sed 's/{?name,label}//')
@@ -300,14 +468,17 @@ release_github() {
     upload_url=$(echo "$release_resp" | grep -o '"upload_url": "[^"]*' | cut -d'"' -f4 | sed 's/{?name,label}//')
   fi
 
-  # Release already exists (422); fetch the existing upload_url.
-  if [[ -z "$upload_url" && "$http_code" == "422" ]]; then
-    echo "[github] Release ${VERSION} already exists (HTTP 422); fetching existing Release..."
+  # Fetch by tag whenever creation did not return an upload URL. This handles
+  # both an existing release (422) and a POST that succeeded remotely but lost
+  # its response locally.
+  if [[ -z "$upload_url" ]]; then
+    if [[ "$http_code" == "422" ]]; then
+      echo "[github] Release ${VERSION} already exists (HTTP 422); fetching existing Release..."
+    else
+      echo "[github] Release creation returned HTTP ${http_code:-000}; checking for an existing Release..."
+    fi
     local existing_resp
-    existing_resp=$(curl -s \
-      -H "Authorization: token ${GITHUB_TOKEN}" \
-      -H "Accept: application/vnd.github.v3+json" \
-      "https://api.github.com/repos/${repo}/releases/tags/${VERSION}")
+    existing_resp=$(github_get_release "${repo}" 2>/dev/null || true)
     upload_url=$(echo "$existing_resp" | grep -o '"upload_url":"[^"]*' | cut -d'"' -f4 | sed 's/{?name,label}//')
     if [[ -z "$upload_url" ]]; then
       upload_url=$(echo "$existing_resp" | grep -o '"upload_url": "[^"]*' | cut -d'"' -f4 | sed 's/{?name,label}//')
@@ -344,13 +515,7 @@ release_github() {
     # uploading. The release response includes each asset's numeric id and,
     # on current GitHub APIs, its sha256 digest.
     local existing_asset_info existing_asset_id existing_asset_digest local_asset_digest
-    existing_asset_info=$(printf '%s' "$release_resp" | node -e '
-      const fs = require("fs");
-      const name = process.argv[1];
-      const release = JSON.parse(fs.readFileSync(0, "utf8"));
-      const asset = (release.assets || []).find((item) => item.name === name);
-      if (asset) process.stdout.write(String(asset.id) + "\t" + (asset.digest || ""));
-    ' "$fname" 2>/dev/null || true)
+    existing_asset_info=$(github_asset_info "${release_resp}" "${fname}")
     if [[ -n "$existing_asset_info" ]]; then
       IFS=$'\t' read -r existing_asset_id existing_asset_digest <<< "$existing_asset_info"
       local_asset_digest="sha256:$(sha256sum "$asset" | awk '{print $1}')"
@@ -361,10 +526,7 @@ release_github() {
 
       echo -n "[github] Replacing ${fname} ... "
       local delete_code
-      delete_code=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
-        -H "Authorization: token ${GITHUB_TOKEN}" \
-        -H "Accept: application/vnd.github.v3+json" \
-        "https://api.github.com/repos/${repo}/releases/assets/${existing_asset_id}")
+      delete_code=$(github_delete_asset "${repo}" "${existing_asset_id}")
       if [[ "$delete_code" != "204" && "$delete_code" != "404" ]]; then
         echo "FAILED to remove existing asset (HTTP ${delete_code})"
         return 1
@@ -372,20 +534,7 @@ release_github() {
       echo "removed existing asset"
     fi
 
-    echo -n "[github] Uploading ${fname} ... "
-    local upload_code
-    if ! upload_code=$(curl -sS -o /dev/null -w "%{http_code}" -X POST \
-      -H "Authorization: token ${GITHUB_TOKEN}" \
-      -H "Accept: application/vnd.github.v3+json" \
-      -H "Content-Type: application/octet-stream" \
-      "${upload_url}?name=${fname}" \
-      --data-binary "@$asset" 2>/dev/null); then
-      upload_code="000"
-    fi
-    if [[ "${upload_code}" =~ ^2[0-9][0-9]$ ]]; then
-      echo "OK"
-    else
-      echo "FAILED (HTTP ${upload_code})"
+    if ! github_upload_asset "${repo}" "${upload_url}" "${asset}"; then
       return 1
     fi
   done

@@ -165,11 +165,7 @@ func removeBinary(stdout interface{ Write([]byte) (int, error) }, path string) b
 		return false
 	}
 
-	quotedPath := strings.ReplaceAll(path, "'", "''")
-	script := fmt.Sprintf(
-		"Start-Sleep -Milliseconds 500; Remove-Item -LiteralPath '%s' -Force -ErrorAction SilentlyContinue",
-		quotedPath,
-	)
+	script := windowsBinaryRemovalScript(path, os.Getpid())
 	cleanup := exec.Command(
 		"powershell.exe",
 		"-NoProfile",
@@ -184,6 +180,33 @@ func removeBinary(stdout interface{ Write([]byte) (int, error) }, path string) b
 	_ = cleanup.Process.Release()
 	fmt.Fprintf(stdout, "✓ Scheduled binary removal: %s\n", path)
 	return true
+}
+
+func windowsBinaryRemovalScript(path string, parentPID int) string {
+	quotedPath := strings.ReplaceAll(path, "'", "''")
+	quotedDir := strings.ReplaceAll(filepath.Dir(path), "'", "''")
+	quotedTier0Dir := strings.ReplaceAll(filepath.Dir(filepath.Dir(path)), "'", "''")
+	return fmt.Sprintf(
+		"$ErrorActionPreference='SilentlyContinue'; "+
+			"for ($i=0; $i -lt 1200 -and (Get-Process -Id %d -ErrorAction SilentlyContinue); $i++) { Start-Sleep -Milliseconds 250 }; "+
+			"for ($i=0; $i -lt 40 -and (Test-Path -LiteralPath '%s'); $i++) { "+
+			"Remove-Item -LiteralPath '%s' -Force -ErrorAction SilentlyContinue; "+
+			"if (Test-Path -LiteralPath '%s') { Start-Sleep -Milliseconds 250 } }; "+
+			"if ((Test-Path -LiteralPath '%s') -and -not (Get-ChildItem -LiteralPath '%s' -Force | Select-Object -First 1)) { "+
+			"Remove-Item -LiteralPath '%s' -Force -ErrorAction SilentlyContinue }; "+
+			"if ((Test-Path -LiteralPath '%s') -and -not (Get-ChildItem -LiteralPath '%s' -Force | Select-Object -First 1)) { "+
+			"Remove-Item -LiteralPath '%s' -Force -ErrorAction SilentlyContinue }",
+		parentPID,
+		quotedPath,
+		quotedPath,
+		quotedPath,
+		quotedDir,
+		quotedDir,
+		quotedDir,
+		quotedTier0Dir,
+		quotedTier0Dir,
+		quotedTier0Dir,
+	)
 }
 
 func removeFile(stdout interface{ Write([]byte) (int, error) }, path, label string) bool {

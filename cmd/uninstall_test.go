@@ -95,6 +95,24 @@ func TestSkillsRemoveArgsAreGlobalAndUseInstalledName(t *testing.T) {
 	}
 }
 
+func TestWindowsBinaryRemovalScriptWaitsForParentAndRetries(t *testing.T) {
+	path := `C:\Users\O'Brien\.tier0\bin\tier0.exe`
+	script := windowsBinaryRemovalScript(path, 1234)
+	wants := []string{
+		"Get-Process -Id 1234",
+		"$i -lt 1200",
+		"$i -lt 40",
+		`C:\Users\O''Brien\.tier0\bin\tier0.exe`,
+		`C:\Users\O''Brien\.tier0\bin`,
+		`C:\Users\O''Brien\.tier0`,
+	}
+	for _, want := range wants {
+		if !strings.Contains(script, want) {
+			t.Fatalf("Windows cleanup script does not contain %q:\n%s", want, script)
+		}
+	}
+}
+
 func TestRunNpxSkillsRemoveVerifiesRemoval(t *testing.T) {
 	withUninstallFakes(t)
 	home := t.TempDir()
