@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -18,6 +19,33 @@ type NpmResult struct {
 	Stdout string
 	Stderr string
 	Err    error
+}
+
+const npmFailureDetailLimit = 2048
+
+func npmFailureDetail(result *NpmResult) string {
+	if result == nil {
+		return "unknown npm failure"
+	}
+
+	detail := strings.TrimSpace(result.Stderr)
+	if detail == "" {
+		detail = strings.TrimSpace(result.Stdout)
+	}
+	if len(detail) > npmFailureDetailLimit {
+		detail = "..." + detail[len(detail)-npmFailureDetailLimit:]
+	}
+
+	if result.Err == nil {
+		if detail != "" {
+			return detail
+		}
+		return "unknown npm failure"
+	}
+	if detail == "" {
+		return result.Err.Error()
+	}
+	return fmt.Sprintf("%v: %s", result.Err, detail)
 }
 
 // NpmAvailable reports whether npm is in PATH.

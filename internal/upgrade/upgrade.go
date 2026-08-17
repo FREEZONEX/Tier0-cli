@@ -160,7 +160,7 @@ func Perform(opts Options) (*Result, error) {
 		npmResult := runNpmInstall(release.TagName)
 		if npmResult.Err != nil {
 			// npm failed; fall through to direct download below
-			result.ErrorMessage = fmt.Sprintf("npm install failed; trying direct download: %v", npmResult.Err)
+			result.ErrorMessage = fmt.Sprintf("npm install failed; trying direct download: %s", npmFailureDetail(npmResult))
 		} else if err := verifyInstalledVersion(release.TagName); err != nil {
 			result.ErrorMessage = fmt.Sprintf("npm install completed, but installed binary verification failed: %v", err)
 			return result, err

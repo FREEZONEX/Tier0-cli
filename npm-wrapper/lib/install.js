@@ -197,6 +197,74 @@ function verifyInstalledBinary(binaryPath, expectedVersion) {
   }
 }
 
+function replaceInstalledBinary(sourcePath, binaryPath, {
+  platform = process.platform,
+  fileSystem = fs,
+  processId = process.pid,
+  timestamp = Date.now(),
+} = {}) {
+  if (platform !== 'win32') {
+    fileSystem.copyFileSync(sourcePath, binaryPath);
+    fileSystem.chmodSync(binaryPath, 0o755);
+    return;
+  }
+
+  // Windows does not allow copyFile to overwrite a running executable. Stage
+  // the new binary beside the destination, rename the running binary out of
+  // the way, then atomically activate the staged binary. Cleanup of the old
+  // executable is best-effort because Windows may keep it locked until the
+  // upgrading process exits.
+  const suffix = `${processId}-${timestamp}`;
+  const binaryDir = path.dirname(binaryPath);
+  const binaryBase = path.basename(binaryPath);
+  const stagedPath = path.join(binaryDir, `.${binaryBase}.new-${suffix}`);
+  const backupPath = `${binaryPath}.old-${suffix}`;
+  let movedExisting = false;
+
+  try {
+    // Remove backups left locked by earlier upgrade processes once they are no
+    // longer in use. A dedicated versioned backup uses a different name and is
+    // intentionally preserved.
+    for (const entry of fileSystem.readdirSync(binaryDir)) {
+      if (entry === `${binaryBase}.old` || entry.startsWith(`${binaryBase}.old-`)) {
+        try {
+          fileSystem.rmSync(path.join(binaryDir, entry), { force: true });
+        } catch (_) {
+          // A still-running prior process can keep its own backup locked.
+        }
+      }
+    }
+    fileSystem.copyFileSync(sourcePath, stagedPath);
+    if (fileSystem.existsSync(binaryPath)) {
+      fileSystem.renameSync(binaryPath, backupPath);
+      movedExisting = true;
+    }
+    fileSystem.renameSync(stagedPath, binaryPath);
+  } catch (err) {
+    try {
+      if (movedExisting && !fileSystem.existsSync(binaryPath) && fileSystem.existsSync(backupPath)) {
+        fileSystem.renameSync(backupPath, binaryPath);
+      }
+    } catch (rollbackErr) {
+      err.message += `; rollback failed: ${rollbackErr.message}`;
+    }
+    try {
+      fileSystem.rmSync(stagedPath, { force: true });
+    } catch (_) {
+      // Best-effort cleanup after a failed replacement.
+    }
+    throw err;
+  }
+
+  if (movedExisting) {
+    try {
+      fileSystem.rmSync(backupPath, { force: true });
+    } catch (_) {
+      // The old running executable can remain locked until this process exits.
+    }
+  }
+}
+
 function materializeEmbeddedSkills({
   binaryPath,
   runner = execFileSync,
@@ -297,10 +365,7 @@ async function install({
       throw new Error('Binary not found in package');
     }
 
-    fs.copyFileSync(foundBinary, binPath);
-    if (process.platform !== 'win32') {
-      fs.chmodSync(binPath, 0o755);
-    }
+    replaceInstalledBinary(foundBinary, binPath);
     fixMacOSSigning(binPath);
     verifyInstalledBinary(binPath, version);
     fs.writeFileSync(versionFile, version);
@@ -371,4 +436,5 @@ module.exports = {
   SKILLS_DIR,
   VERSION,
   binaryName,
+  replaceInstalledBinary,
 };
