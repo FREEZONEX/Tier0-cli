@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.7.0 - 2026-08-19
 
 - Added `mqtt auth create/delete` for one-time MQTT credential creation, secure local profiles, dry-run previews, and confirmed revocation.
 - Added TLS MQTT `publish` and `subscribe` with QoS, retain, JSON validation, wildcard subscriptions, bounded streaming, and NDJSON output.
