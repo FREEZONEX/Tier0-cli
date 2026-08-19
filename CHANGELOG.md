@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.6.10 - 2026-08-17
+
+- Hardened Windows self-uninstall by waiting for the CLI process to exit, retrying removal of the locked executable, and removing empty Tier0 directories after cleanup.
+- Made the release script execute from an immutable temporary snapshot so source edits, pulls, or branch switches cannot corrupt an in-flight release.
+- Added configurable GitHub API and asset-upload timeouts, progress output, low-speed detection, and bounded retries.
+- Reconciled timed-out uploads against GitHub asset SHA-256 digests, accepting uploads that completed remotely and replacing incomplete or stale assets before retrying.
+- Recovered cleanly when GitHub created a Release but its response was lost, and made reruns reuse an existing Release and matching assets.
+- Known limitation: `uninstall --purge` can leave `~/.tier0/update-state.json` and legacy `tier0*.killed.bak` files created by older versions; remove `~/.tier0` manually after uninstall when these files are present.
+
+## v0.6.9 - 2026-08-17
+
+- Made Agent Skills and credentials persist by default during uninstall so they can be updated or reused independently.
+- Added `--remove-skills` for explicit Agent Skill removal and retained `--purge` for credential removal.
+- Made both the native CLI and npm wrapper remove the installed binary, embedded Skill baseline, version record, and global `@tier0/cli` package without recursive npm lifecycle cleanup.
+- Verified Agent Skill removal instead of trusting a successful `skills remove` exit code, and report incomplete cleanup as a command error.
+- Added npm-wrapper uninstall tests covering default preservation, full removal, false-success detection, and global package cleanup.
+
+## v0.6.8 - 2026-08-17
+
+- Made npm-based Windows upgrades atomic by staging the replacement executable beside the installed binary before activation.
+- Added rollback when activation fails and best-effort cleanup for locked executables left by earlier Windows upgrade processes.
+- Verified that npm upgrades installed the requested CLI version before reporting success, falling back to direct GitHub installation when verification fails.
+- Added tests for atomic activation, rollback, and locked-backup handling on Windows.
+
+## v0.6.7 - 2026-08-14
+
+- Embedded a trusted Tier0 Skill baseline in every CLI binary so installation and repair no longer depend on a duplicate Skill directory in Release archives.
+- Added `skills install`, provenance-aware `skills status`, and automatic Skill materialization during install and upgrade while preserving independently updated remote Skills.
+- Made release builds synchronize the embedded snapshot from an exact `FREEZONEX/Tier0-skill` GitHub commit and require the resulting snapshot to be reviewed and committed before publishing.
+- Kept independent Skill updates and Agent synchronization available through `tier0 skills update` and `tier0 skills sync`.
+- Fixed npm packaging to preserve the executable `bin/tier0.js` entry point.
+- Added retry handling for transient GitHub Release asset upload failures.
+
 ## v0.6.5 - 2026-08-11
 
 - Added business-error validation to raw API, UNS browse/read/search/history, and Flow list/get/data commands so failed ResultVO responses return non-zero exit codes.
