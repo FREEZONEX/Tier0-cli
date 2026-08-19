@@ -1,6 +1,6 @@
 ---
 name: tier0
-description: "Tier0 platform operations entry point: CLI setup, authentication, routing to UNS, Flow, project and platform member queries, service info, and API key diagnostics skills."
+description: "Tier0 platform operations entry point: CLI setup, authentication, routing to UNS, MQTT, Flow, managed files, project and platform member queries, service info, and API key diagnostics skills."
 metadata:
   requires:
     bins: ["tier0"]
@@ -18,7 +18,7 @@ Use this skill when the user asks about:
 - installing or configuring Tier0 CLI
 - authenticating with Tier0
 - choosing the right Tier0 skill or command family
-- UNS, Flow, Node-RED, service connectivity, or API key permissions
+- UNS, MQTT, Flow, Node-RED, service connectivity, or API key permissions
 - querying project or platform members, roles, user statuses, or role-bound applications
 
 ## Setup
@@ -98,9 +98,10 @@ For agent-generated mutation commands, validate the final request with
 - `tier0 api`
 - `tier0 uns write/create/update/delete/restore`
 - `tier0 flow create/update/delete/deploy`
+- `tier0 mqtt auth create/delete` and `tier0 mqtt publish`
 
 A preview does not require or expose an API key, contact Tier0, or perform the operation. It
-returns one stable envelope:
+returns a stable envelope. API-backed mutations use `data.api`:
 
 ```json
 {
@@ -113,6 +114,9 @@ returns one stable envelope:
   }
 }
 ```
+
+MQTT publish previews use `data.mqtt` and never include the MQTT username or
+password. Read `mqtt/SKILL.md` before creating credentials or opening a stream.
 
 Inspect `method`, `url`, and `body`. Never report a dry-run as a successful
 business operation. Execute the same command without `--dry-run` only after the
@@ -135,6 +139,7 @@ Read the target sub skill or reference before executing a task-specific command.
 | User goal | Read |
 | --- | --- |
 | Browse, search, read, write, history, create, update, delete, or restore UNS nodes/topics | `uns/SKILL.md` |
+| Create/delete MQTT credentials, publish messages, or subscribe continuously | `mqtt/SKILL.md` |
 | List, inspect, create, update, delete, export, or deploy Node-RED Flows | `flow/SKILL.md` |
 | List/filter project members on a deployment where the endpoint is enabled | `launchpad/members.md` |
 | List/filter platform members on a deployment where the endpoint is enabled | `platform/members.md` |
@@ -164,7 +169,7 @@ snapshots and bounded queries.
 Quote wildcard topics in shells that expand `*`, `+`, or `#`:
 
 ```bash
-tier0 uns read --topic 'Plant/+/Metric/Temperature'
+tier0 mqtt subscribe --credential agent --topic 'Plant/+/Metric/Temperature' --count 1 --json
 ```
 
 For complex JSON, prefer files or stdin over fragile shell quoting.

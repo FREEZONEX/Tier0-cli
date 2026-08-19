@@ -57,6 +57,7 @@ func init() {
 	rootCmd.AddCommand(flowCmd)
 	rootCmd.AddCommand(unsCmd)
 	rootCmd.AddCommand(assetsCmd)
+	rootCmd.AddCommand(mqttCmd)
 
 	// Version is handled inline since it's trivial.
 	rootCmd.AddCommand(&cobra.Command{

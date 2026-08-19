@@ -23,6 +23,15 @@ Run directly:
 npx @tier0/cli@latest --help
 ```
 
+## MQTT Quick Start
+
+```bash
+tier0 mqtt auth create --name agent --save agent --random-suffix=true
+tier0 mqtt subscribe --credential agent --topic 'Plant/+/State/Status' --timeout 60s --json
+tier0 mqtt publish --credential agent --topic Plant/Line1/State/Status --file payload.json --json-message --qos 1
+tier0 mqtt auth delete --credential agent --yes
+```
+
 ## Uninstall
 
 ```bash

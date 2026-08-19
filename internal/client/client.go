@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -66,7 +67,7 @@ func (c *Client) DoAPI(ctx context.Context, endpoint, method, body string, debug
 			}
 		}
 		if body != "" {
-			fmt.Fprintf(os.Stderr, "[debug] Body: %s\n", body)
+			fmt.Fprintf(os.Stderr, "[debug] Body: %s\n", redactDebugPayload(body))
 		}
 		fmt.Fprintf(os.Stderr, "[debug] ----------------------------------\n")
 	}
@@ -85,12 +86,13 @@ func (c *Client) DoAPI(ctx context.Context, endpoint, method, body string, debug
 	}
 
 	if debug {
+		debugBody := redactDebugPayload(string(respBody))
 		fmt.Fprintf(os.Stderr, "[debug] ---------- HTTP Response ---------\n")
 		fmt.Fprintf(os.Stderr, "[debug] Status: %d %s\n", resp.StatusCode, resp.Status)
-		if len(respBody) > 4096 {
-			fmt.Fprintf(os.Stderr, "[debug] Body: %s... (%d bytes truncated)\n", string(respBody[:4096]), len(respBody))
+		if len(debugBody) > 4096 {
+			fmt.Fprintf(os.Stderr, "[debug] Body: %s... (%d bytes truncated)\n", debugBody[:4096], len(debugBody))
 		} else {
-			fmt.Fprintf(os.Stderr, "[debug] Body: %s\n", string(respBody))
+			fmt.Fprintf(os.Stderr, "[debug] Body: %s\n", debugBody)
 		}
 		fmt.Fprintf(os.Stderr, "[debug] ----------------------------------\n")
 	}
@@ -100,6 +102,44 @@ func (c *Client) DoAPI(ctx context.Context, endpoint, method, body string, debug
 	}
 
 	return string(respBody), nil
+}
+
+func redactDebugPayload(raw string) string {
+	var value any
+	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		return raw
+	}
+	redactDebugValue(value)
+	data, err := json.Marshal(value)
+	if err != nil {
+		return "<debug body redacted>"
+	}
+	return string(data)
+}
+
+func redactDebugValue(value any) {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, child := range typed {
+			if sensitiveDebugKey(key) {
+				typed[key] = "***"
+				continue
+			}
+			redactDebugValue(child)
+		}
+	case []any:
+		for _, child := range typed {
+			redactDebugValue(child)
+		}
+	}
+}
+
+func sensitiveDebugKey(key string) bool {
+	normalized := strings.ToLower(strings.NewReplacer("_", "", "-", "").Replace(key))
+	return strings.Contains(normalized, "password") ||
+		strings.Contains(normalized, "secret") ||
+		strings.Contains(normalized, "token") ||
+		normalized == "apikey" || normalized == "authorization" || normalized == "privatekey"
 }
 
 func min(a, b int) int {

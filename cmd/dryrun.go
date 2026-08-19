@@ -10,7 +10,7 @@ import (
 )
 
 func addDryRunFlag(command *cobra.Command) {
-	command.Flags().Bool("dry-run", false, "Preview the API request without sending it")
+	command.Flags().Bool("dry-run", false, "Preview the request without sending it")
 }
 
 func writeDryRun(command *cobra.Command, method, endpoint string, body interface{}) (bool, error) {

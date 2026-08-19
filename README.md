@@ -89,6 +89,11 @@ tier0 uns read Plant/Line1/Metric/Temperature --json
 tier0 uns write --topic Plant/Line1/Metric/Temperature --value '{"temperature":27.5}'
 tier0 uns history -t Plant/Line1/Metric/Temperature --start -1h --json
 
+tier0 mqtt auth create --name agent --save agent --random-suffix=true
+tier0 mqtt publish --credential agent --topic Plant/Line1/State/Status --file payload.json --json-message --qos 1
+tier0 mqtt subscribe --credential agent --topic 'Plant/+/State/Status' --count 10 --timeout 60s --json
+tier0 mqtt auth delete --credential agent --yes
+
 tier0 flow list
 tier0 flow nodes --id 1 --json
 tier0 flow create --name "modbus-collector" --source --desc "Modbus collector"
@@ -112,7 +117,8 @@ tier0 api /openapi/v1/uns/write --body-file body.json --dry-run --json
 ```
 
 Request previews are supported by `api`, UNS `write/create/update/delete/restore`,
-and Flow `create/update/delete/deploy`. JSON previews use one stable envelope:
+Flow `create/update/delete/deploy`, MQTT credential create/delete, and MQTT
+publish. API-backed JSON previews use this envelope:
 
 ```json
 {
@@ -125,6 +131,10 @@ and Flow `create/update/delete/deploy`. JSON previews use one stable envelope:
   }
 }
 ```
+
+MQTT publish previews use `data.mqtt` with the broker, topic, QoS, retain flag,
+payload byte count, and credential profile name. MQTT usernames and passwords
+are never included.
 
 Headers and API keys are never included. Request body flags and files must
 contain valid JSON; the CLI no longer guesses at or rewrites malformed JSON.
@@ -149,7 +159,8 @@ Automation should branch on these fields rather than matching message text.
 
 ## Configuration
 
-Configuration is stored at `~/.tier0/config.json`.
+Configuration is stored at `~/.tier0/config.json`. MQTT credentials saved with
+`mqtt auth create --save` use individual user-only files under `~/.tier0/mqtt/`.
 
 Priority:
 
@@ -166,6 +177,11 @@ Tier0 CLI output is English-only. The legacy `--lang en` flag is accepted for co
 | --- | --- |
 | `TIER0_BASE_URL` | Override platform base URL |
 | `TIER0_API_KEY` | Override API key |
+| `TIER0_MQTT_BROKER` | MQTT broker used without a saved credential profile |
+| `TIER0_MQTT_CLIENT_ID` | MQTT client ID used without a saved credential profile |
+| `TIER0_MQTT_USERNAME` | MQTT username used without a saved credential profile |
+| `TIER0_MQTT_PASSWORD` | MQTT password used without a saved credential profile |
+| `TIER0_MQTT_RANDOM_SUFFIX` | Add a random client-ID suffix when set to `true` or `1` |
 | `TIER0_SKIP_UNINSTALL` | Skip npm uninstall cleanup hook |
 
 ## Uninstall

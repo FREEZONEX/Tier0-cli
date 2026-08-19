@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Added `mqtt auth create/delete` for one-time MQTT credential creation, secure local profiles, dry-run previews, and confirmed revocation.
+- Added TLS MQTT `publish` and `subscribe` with QoS, retain, JSON validation, wildcard subscriptions, bounded streaming, and NDJSON output.
+- Added credential-redacted MQTT publish previews and redacted password, token, and API-key fields from HTTP debug logs.
+- Added the embedded `tier0-mqtt` Skill and updated continuous UNS guidance to use MQTT instead of OpenAPI polling.
+
 ## v0.6.10 - 2026-08-17
 
 - Hardened Windows self-uninstall by waiting for the CLI process to exit, retrying removal of the locked executable, and removing empty Tier0 directories after cleanup.
