@@ -22,7 +22,25 @@ tier0 uns read --topic 'Plant/+/Metric/Temperature' --json
 - Folders such as `Plant/Line1` cannot be read.
 - Positional topics and repeated `--topic` flags are both accepted.
 - Use `--include-metadata` when the response must include topic metadata.
+- Current VQT values are returned without `--include-leaf-value`. That flag only
+  duplicates the VQT under `metadata.payload` when `--include-metadata` is also
+  set; it is a no-op by itself for `uns read`.
 - `GoodNoData` means the topic has no current cached value.
+
+## Wildcard Requests
+
+The server removes wildcard patterns that are fully covered by a broader
+pattern and returns each expanded topic once. Callers should still avoid
+redundant patterns so request intent stays clear. For example, the first pattern
+already covers the second one because every `+` matches exactly one segment:
+
+```text
++/+/+/+/+/+/Metric/Telemetry
+SmartCity/+/+/+/+/+/Metric/Telemetry
+```
+
+Keep only the broader pattern unless the narrower pattern has a different
+depth. Quote wildcard arguments so the shell does not interpret them.
 
 ## Response Shape
 

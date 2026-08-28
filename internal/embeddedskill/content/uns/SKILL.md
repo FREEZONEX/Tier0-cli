@@ -35,6 +35,8 @@ Use this skill for Tier0 Unified Namespace data-plane and namespace-management t
 9. Preview agent-generated `write`, `create`, `update`, `delete`, and `restore` requests with `--dry-run --json`.
 10. JSON is strict. Use file flags for complex payloads and never combine an inline JSON flag with its file alternative.
 11. `uns read` is a snapshot API. For continuous/event-driven data, do not build an OpenAPI polling loop; read `references/realtime.md` and use MQTT/EventFlow when the required runtime and credentials are available.
+12. For large history queries, use `--count-mode none` when exact totals are not consumed, and follow each topic's `meta.hasMore`; use `--auto-sparse` when bounded trend points are sufficient.
+13. For cumulative Daily/Monthly meter readings, query `first` and `last` over the same complete window and calculate `last - first` in the application; do not substitute `avg` or `sum`.
 
 ## Routing
 
