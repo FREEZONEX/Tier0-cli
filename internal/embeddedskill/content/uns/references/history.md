@@ -59,24 +59,24 @@ Do not combine `--aggregate-field` with the legacy `--field`/`--fn` pair. A
 field can occur only once in one request. If the function is omitted, numeric
 fields default to `avg` and other fields default to `last`.
 
-## Pagination, Counting, and Sampling
+## Performance Parameter Selection
 
-- The compatible CLI default sends `page=1`, `size=100`, and uses the server's
-  default exact count. `size` applies to every topic, not to the whole request.
-- Use `--count-mode none` when the caller does not need an exact total. The
-  response then has `data.total=-1`, `data.totalExact=false`, and
-  `result.meta.rawTotal=-1`; continue only while that topic's
-  `result.meta.hasMore` is true.
-- Use `--count-mode exact`, or omit `--count-mode`, only when the caller must
-  display an exact total or page count.
-- Use `--auto-sparse` to omit both `page` and `size`. The server then samples a
-  large raw query to a bounded result. Automatic sampling is not enabled when
-  either pagination field is sent.
-- Do not combine `--auto-sparse` with an explicit `--page` or `--size`.
+| Scenario | Recommended CLI parameters | Caller behavior |
+|---|---|---|
+| Raw pages without an exact total | `--count-mode none --page N --size M` | Treat `size` as the limit **per topic**, batch 50–100 topics per request, keep total HTTP concurrency at 2, and follow each item's `meta.hasMore` |
+| UI must display an exact total/page count | Omit `--count-mode` or use `--count-mode exact` | Accept the additional exact `COUNT` cost |
+| Trend chart with bounded points | `--count-mode none --auto-sparse` | `--auto-sparse` omits both `page` and `size`; do not combine it with either explicit flag |
+| One aggregate for a complete window | `--count-mode none --interval <full-window>` plus only the required aggregate fields | Return at most one aggregate bucket per topic |
+| Cumulative Daily/Monthly usage | Run the same window twice with `first` and `last` | Compute `last - first` in the application; do not use `avg` or `sum` as usage |
 
-For many topics, batch requests at an application-appropriate size and bound
-HTTP concurrency. Skipping exact counts reduces database work but does not make
-an unbounded response body cheap.
+The compatible CLI default still sends `page=1`, `size=100`, and uses exact
+counting. With `--count-mode none`, the response has `data.total=-1`,
+`data.totalExact=false`, and `result.meta.rawTotal=-1`.
+
+Skipping exact counts reduces database work only; it does **not** reduce the
+response body. Reduce the per-topic `size`, use `--auto-sparse` or aggregation,
+and batch topics when response size is the bottleneck. Never treat `size` as a
+request-wide limit.
 
 ## Cumulative Meter Readings
 
