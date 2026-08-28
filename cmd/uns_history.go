@@ -14,7 +14,7 @@ import (
 var unsHistoryCmd = &cobra.Command{
 	Use:   "history",
 	Short: "Query historical data for topics",
-	Long:  "Query historical data for one or more UNS topics.\n\nTime formats accepted:\n  Relative: -1h  -30m  -7d  -1w\n  Absolute: 2026-01-01T00:00:00Z  (ISO 8601)\n  Keyword:  now\n\nExamples:\n  tier0 uns history -t demo --start -1h\n  tier0 uns history -t demo --start -24h --end now --fn avg --interval 1h\n  tier0 uns history -t demo --start 2026-01-01T00:00:00Z --end 2026-01-02T00:00:00Z",
+	Long:  "Query historical data for one or more UNS topics.\n\nTime formats accepted:\n  Relative: -1h  -30m  -7d  -1w\n  Absolute: 2026-01-01T00:00:00Z  (ISO 8601)\n  Keyword:  now\n\nExamples:\n  tier0 uns history -t demo --start -1h\n  tier0 uns history -t demo --start -24h --end now --count-mode none\n  tier0 uns history -t demo --start -24h --end now --auto-sparse\n  tier0 uns history -t demo --start -24h --end now --interval 1h --aggregate-field temperature=avg",
 
 	RunE: runUnsHistory,
 }
@@ -29,13 +29,19 @@ func init() {
 	unsHistoryCmd.Flags().Int("page", 1,
 		"Page number")
 	unsHistoryCmd.Flags().IntP("size", "l", 100,
-		"Page size (max data points)")
+		"Page size per topic (max data points per topic)")
+	unsHistoryCmd.Flags().Bool("auto-sparse", false,
+		"Omit page and size so the server can automatically sample large result sets")
+	unsHistoryCmd.Flags().String("count-mode", "",
+		"Count mode: exact (compatible default) or none (skip exact COUNT and follow meta.hasMore)")
 	unsHistoryCmd.Flags().String("interval", "",
 		"Aggregation interval (e.g. 1m, 1h, 1d)")
 	unsHistoryCmd.Flags().String("fn", "",
-		"Aggregation function (avg/max/min/sum/count)")
+		"Single-field aggregation function (avg/max/min/sum/count/first/last)")
 	unsHistoryCmd.Flags().String("field", "",
-		"Aggregation field name")
+		"Single-field aggregation field name")
+	unsHistoryCmd.Flags().StringSlice("aggregate-field", nil,
+		"Multi-field aggregation as name or name=function (repeatable)")
 	unsHistoryCmd.MarkFlagRequired("topic")
 	unsHistoryCmd.MarkFlagRequired("start")
 }
@@ -103,9 +109,12 @@ func runUnsHistory(cmd *cobra.Command, args []string) error {
 	endExpr, _ := cmd.Flags().GetString("end")
 	page, _ := cmd.Flags().GetInt("page")
 	size, _ := cmd.Flags().GetInt("size")
+	autoSparse, _ := cmd.Flags().GetBool("auto-sparse")
+	countMode, _ := cmd.Flags().GetString("count-mode")
 	interval, _ := cmd.Flags().GetString("interval")
 	fn, _ := cmd.Flags().GetString("fn")
 	field, _ := cmd.Flags().GetString("field")
+	aggregateFieldSpecs, _ := cmd.Flags().GetStringSlice("aggregate-field")
 
 	startTime, err := parseTimeToISO(startExpr)
 	if err != nil {
@@ -115,21 +124,49 @@ func runUnsHistory(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return invalidArgumentCause(cmd, "--end", err.Error(), err)
 	}
-	if page < 1 {
+	if cmd.Flags().Changed("page") && page < 1 {
 		return invalidArgument(cmd, "--page", "--page must be at least 1")
 	}
-	if size < 1 {
+	if cmd.Flags().Changed("size") && size < 1 {
 		return invalidArgument(cmd, "--size", "--size must be at least 1")
+	}
+	if autoSparse && (cmd.Flags().Changed("page") || cmd.Flags().Changed("size")) {
+		return invalidArgument(cmd, "--auto-sparse", "--auto-sparse cannot be combined with --page or --size")
+	}
+	countMode = strings.ToLower(strings.TrimSpace(countMode))
+	if countMode != "" && countMode != "exact" && countMode != "none" {
+		return invalidArgument(cmd, "--count-mode", "--count-mode must be exact or none")
+	}
+	fn = strings.ToLower(strings.TrimSpace(fn))
+	interval = strings.TrimSpace(interval)
+	field = strings.TrimSpace(field)
+	if fn != "" && !isHistoryAggregationFunction(fn) {
+		return invalidArgument(cmd, "--fn", "--fn must be avg, max, min, sum, count, first, or last")
+	}
+	aggregateFields, err := parseHistoryAggregationFields(aggregateFieldSpecs)
+	if err != nil {
+		return invalidArgumentCause(cmd, "--aggregate-field", err.Error(), err)
+	}
+	if len(aggregateFields) > 0 && (fn != "" || field != "") {
+		return invalidArgument(cmd, "--aggregate-field", "--aggregate-field cannot be combined with --fn or --field")
+	}
+	if (fn != "" || field != "" || len(aggregateFields) > 0) && interval == "" {
+		return invalidArgument(cmd, "--interval", "--interval is required when aggregation fields or functions are set")
 	}
 
 	payload := map[string]any{
 		"topics":     topics,
 		"start_time": startTime,
 		"end_time":   endTime,
-		"page":       page,
-		"size":       size,
 	}
-	if fn != "" || interval != "" || field != "" {
+	if !autoSparse {
+		payload["page"] = page
+		payload["size"] = size
+	}
+	if countMode != "" {
+		payload["countMode"] = countMode
+	}
+	if fn != "" || interval != "" || field != "" || len(aggregateFields) > 0 {
 		agg := map[string]any{}
 		if fn != "" {
 			agg["function"] = fn
@@ -139,6 +176,9 @@ func runUnsHistory(cmd *cobra.Command, args []string) error {
 		}
 		if field != "" {
 			agg["field"] = field
+		}
+		if len(aggregateFields) > 0 {
+			agg["fields"] = aggregateFields
 		}
 		payload["aggregation"] = agg
 	}
@@ -161,4 +201,40 @@ func runUnsHistory(cmd *cobra.Command, args []string) error {
 		checker.Emit("", false, stdout, cmd.ErrOrStderr())
 	}
 	return nil
+}
+
+func isHistoryAggregationFunction(value string) bool {
+	switch value {
+	case "avg", "max", "min", "sum", "count", "first", "last":
+		return true
+	default:
+		return false
+	}
+}
+
+func parseHistoryAggregationFields(specs []string) ([]map[string]any, error) {
+	fields := make([]map[string]any, 0, len(specs))
+	seen := make(map[string]struct{}, len(specs))
+	for _, spec := range specs {
+		parts := strings.SplitN(strings.TrimSpace(spec), "=", 2)
+		name := strings.TrimSpace(parts[0])
+		if name == "" {
+			return nil, fmt.Errorf("field name is required (use name or name=function)")
+		}
+		key := strings.ToLower(name)
+		if _, ok := seen[key]; ok {
+			return nil, fmt.Errorf("field %q is repeated", name)
+		}
+		seen[key] = struct{}{}
+		item := map[string]any{"name": name}
+		if len(parts) == 2 {
+			function := strings.ToLower(strings.TrimSpace(parts[1]))
+			if !isHistoryAggregationFunction(function) {
+				return nil, fmt.Errorf("field %q function must be avg, max, min, sum, count, first, or last", name)
+			}
+			item["function"] = function
+		}
+		fields = append(fields, item)
+	}
+	return fields, nil
 }

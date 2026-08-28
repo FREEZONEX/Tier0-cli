@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Added compatible UNS history count controls, automatic sparse queries, multi-field aggregation, and `first`/`last` aggregation functions.
+
 ## v0.7.0 - 2026-08-19
 
 - Added `mqtt auth create/delete` for one-time MQTT credential creation, secure local profiles, dry-run previews, and confirmed revocation.
