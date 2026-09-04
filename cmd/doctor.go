@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -50,7 +48,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		checks = append(checks, doctorCheck{Name: "config", OK: true, Message: configMessage(baseURL, profile)})
 	}
 
-	infoResp, infoErr := doctorInfo(cmd.Context(), baseURL, debug)
+	infoResp, infoErr := doctorInfo(cmd.Context(), baseURL, profile.APIKey, debug)
 	if infoErr != nil {
 		checks = append(checks, doctorCheck{
 			Name: "openapi_info", OK: false, Message: infoErr.Error(),
@@ -115,32 +113,17 @@ func doctorFailure(checks []doctorCheck) error {
 		WithHint("Review the failed doctor checks above.", "")
 }
 
-func doctorInfo(ctx context.Context, baseURL string, debug bool) (string, error) {
+func doctorInfo(ctx context.Context, baseURL, apiKey string, debug bool) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	c := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(baseURL, "/")+"/openapi/v1/info", strings.NewReader("{}"))
+	resp, err := client.New(baseURL, apiKey).DoAPI(ctx, "/openapi/v1/info", "POST", "{}", debug)
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Tier0-Source", "tier0-cli")
-	if debug {
-		fmt.Fprintf(os.Stderr, "[debug] POST %s\n", req.URL.String())
-	}
-	resp, err := c.Do(req)
-	if err != nil {
+	if err := cmdutil.CheckOK(resp); err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-	if resp.StatusCode >= 400 {
-		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
-	}
-	return doctorInfoSummary(string(body)), nil
+	return doctorInfoSummary(resp), nil
 }
 
 func doctorInfoSummary(resp string) string {

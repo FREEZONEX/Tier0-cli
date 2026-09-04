@@ -102,7 +102,7 @@ fi
 for item in "${SKILL_SRC}"/*; do
   name="$(basename "${item}")"
   case "${name}" in
-    .git|README.md|CHANGELOG.md|_commit_msg.txt|install-openclaw.sh)
+    .git|README.md|CHANGELOG.md|_commit_msg.txt|install-openclaw.sh|*.zip|*.tar.gz|*.tgz)
       continue
       ;;
   esac

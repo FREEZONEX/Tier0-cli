@@ -64,7 +64,8 @@ for item in "${SKILL_SRC}"/*; do
   name=$(basename "$item")
   if [[ "$name" == ".git" || "$name" == "install-openclaw.sh" ||
         "$name" == "README.md" || "$name" == "CHANGELOG.md" ||
-        "$name" == "_commit_msg.txt" ]]; then
+        "$name" == "_commit_msg.txt" || "$name" == *.zip ||
+        "$name" == *.tar.gz || "$name" == *.tgz ]]; then
     continue
   fi
   if [[ -d "$item" ]]; then

@@ -3,6 +3,11 @@
 ## Unreleased
 
 - Added compatible UNS history count controls, automatic sparse queries, multi-field aggregation, and `first`/`last` aggregation functions.
+- Made asset uploads accept either numeric or numeric-string `fileId` values returned by compatible platform deployments.
+- Made `tier0 doctor` authenticate its OpenAPI service-info check with the configured API key and the shared CLI HTTP client.
+- Limited Tier0 business-envelope validation in `tier0 api` to `/openapi/**`, so user-defined Flow HTTP responses may use fields such as `code` or `data.success` as application data.
+- Excluded repository archive files from both embedded and standalone Skill packaging.
+- Updated the embedded Tier0 Skill provenance to the latest reviewed upstream snapshot.
 
 ## v0.7.0 - 2026-08-19
 

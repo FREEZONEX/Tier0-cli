@@ -70,7 +70,7 @@ func runAPI(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
 	}
-	if err := cmdutil.CheckResponse(resp); err != nil {
+	if err := checkAPIResponse(endpoint, resp); err != nil {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
 	}
 
@@ -79,4 +79,16 @@ func runAPI(cmd *cobra.Command, args []string) error {
 		cmd.OutOrStdout().Write([]byte(resp + "\n"))
 	}
 	return nil
+}
+
+func isTier0OpenAPIEndpoint(endpoint string) bool {
+	path := strings.TrimSpace(endpoint)
+	return path == "/openapi" || strings.HasPrefix(path, "/openapi/")
+}
+
+func checkAPIResponse(endpoint, resp string) error {
+	if !isTier0OpenAPIEndpoint(endpoint) {
+		return nil
+	}
+	return cmdutil.CheckResponse(resp)
 }
