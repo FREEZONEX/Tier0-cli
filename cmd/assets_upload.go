@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/apierr"
@@ -60,13 +61,41 @@ type assetsUploadResponse struct {
 	Code int    `json:"code"`
 	Msg  string `json:"msg"`
 	Data struct {
-		FileID     int64             `json:"fileId"`
+		FileID     flexibleInt64     `json:"fileId"`
 		FilePath   string            `json:"filePath"`
 		FileURL    string            `json:"fileUrl"`
 		PostURL    string            `json:"postUrl"`
 		PostFields map[string]string `json:"postFields"`
 		ExpiresAt  int64             `json:"expiresAt"`
 	} `json:"data"`
+}
+
+type flexibleInt64 int64
+
+func (value *flexibleInt64) UnmarshalJSON(data []byte) error {
+	data = bytes.TrimSpace(data)
+	if bytes.Equal(data, []byte("null")) {
+		*value = 0
+		return nil
+	}
+	if len(data) > 0 && data[0] == '"' {
+		var text string
+		if err := json.Unmarshal(data, &text); err != nil {
+			return err
+		}
+		parsed, err := strconv.ParseInt(strings.TrimSpace(text), 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid integer string %q: %w", text, err)
+		}
+		*value = flexibleInt64(parsed)
+		return nil
+	}
+	var parsed int64
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return err
+	}
+	*value = flexibleInt64(parsed)
+	return nil
 }
 
 func runAssetsUpload(cmd *cobra.Command, args []string) error {
@@ -146,7 +175,7 @@ func runAssetsUpload(cmd *cobra.Command, args []string) error {
 	result := map[string]any{
 		"filePath": uploadResp.Data.FilePath,
 		"fileUrl":  uploadResp.Data.FileURL,
-		"fileId":   uploadResp.Data.FileID,
+		"fileId":   int64(uploadResp.Data.FileID),
 	}
 	if jsonMode {
 		fmt.Fprintln(cmd.OutOrStdout(), cmdutil.JSONString(result))

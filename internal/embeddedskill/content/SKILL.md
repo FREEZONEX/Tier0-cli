@@ -1,6 +1,6 @@
 ---
 name: tier0
-description: "Tier0 platform operations entry point: CLI setup, authentication, routing to UNS, MQTT, Flow, managed files, project and platform member queries, service info, and API key diagnostics skills."
+description: "Tier0 platform operations entry point: CLI setup, authentication, and routing to UNS, MQTT, Flow management and user-defined Node-RED HTTP endpoints, managed files, member queries, service info, and API key diagnostics."
 metadata:
   requires:
     bins: ["tier0"]
@@ -140,7 +140,7 @@ Read the target sub skill or reference before executing a task-specific command.
 | --- | --- |
 | Browse, search, read, write, history, create, update, delete, or restore UNS nodes/topics | `uns/SKILL.md` |
 | Create/delete MQTT credentials, publish messages, or subscribe continuously | `mqtt/SKILL.md` |
-| List, inspect, create, update, delete, export, or deploy Node-RED Flows | `flow/SKILL.md` |
+| List, inspect, create, update, delete, export, or deploy Node-RED Flows; expose or call a user-defined `http in` endpoint | `flow/SKILL.md` |
 | List/filter project members on a deployment where the endpoint is enabled | `launchpad/members.md` |
 | List/filter platform members on a deployment where the endpoint is enabled | `platform/members.md` |
 | Upload, download, get URL, or delete files in object storage | `files/SKILL.md` |
