@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -8,6 +9,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -21,7 +24,20 @@ var (
 	errDownloadRedirectInvalid = errors.New("invalid download redirect")
 	errDownloadDowngrade       = errors.New("refusing HTTPS downgrade in download redirect")
 	errDownloadInsecureOrigin  = errors.New("refusing insecure cross-origin download redirect")
+	errDownloadGatewayRedirect = errors.New("gateway download must return a 302 redirect")
+	errDownloadLoginRedirect   = errors.New("refusing download redirect to a login page")
+	loginPasswordInput         = regexp.MustCompile(`(?is)<input\b[^>]*\btype\s*=\s*["']?password\b`)
 )
+
+func loginPath(u *url.URL) bool {
+	for _, part := range strings.Split(strings.ToLower(u.Path), "/") {
+		switch part {
+		case "login", "log-in", "signin", "sign-in", "authorize":
+			return true
+		}
+	}
+	return false
+}
 
 // downloadRedirect is separate from the API policy: storage URLs can have a
 // different HTTPS origin, but must never receive credentials or a Referer.
@@ -31,6 +47,9 @@ func downloadRedirect(req *http.Request, via []*http.Request) error {
 	}
 	if len(via) == 0 || req.URL.User != nil || (req.URL.Scheme != "https" && req.URL.Scheme != "http") {
 		return errDownloadRedirectInvalid
+	}
+	if loginPath(req.URL) {
+		return errDownloadLoginRedirect
 	}
 	previous := via[len(via)-1].URL
 	if strings.EqualFold(previous.Scheme, "https") && !strings.EqualFold(req.URL.Scheme, "https") {
@@ -96,6 +115,9 @@ func runAssetsDownload(cmd *cobra.Command, args []string) error {
 	redirected := false
 	client := &http.Client{Timeout: 60 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		redirected = true
+		if len(via) == 1 && (req.Response == nil || req.Response.StatusCode != http.StatusFound) {
+			return errDownloadGatewayRedirect
+		}
 		return downloadRedirect(req, via)
 	}}
 	get := func(version string) (*http.Response, error) {
@@ -117,7 +139,7 @@ func runAssetsDownload(cmd *cobra.Command, args []string) error {
 	}
 	if err != nil {
 		// net/http errors can contain a complete presigned Location URL.
-		for _, safe := range []error{errDownloadRedirectLimit, errDownloadRedirectInvalid, errDownloadDowngrade, errDownloadInsecureOrigin} {
+		for _, safe := range []error{errDownloadRedirectLimit, errDownloadRedirectInvalid, errDownloadDowngrade, errDownloadInsecureOrigin, errDownloadGatewayRedirect, errDownloadLoginRedirect} {
 			if errors.Is(err, safe) {
 				return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("download: %w", safe), jsonMode)
 			}
@@ -128,26 +150,43 @@ func runAssetsDownload(cmd *cobra.Command, args []string) error {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("download failed: status=%d", resp.StatusCode), jsonMode)
 	}
-	// The gateway contract is a redirect, or a JSON business-error envelope.
-	// Do not apply this rule to a redirected storage response: JSON is a valid file.
 	if !redirected {
-		mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
-		if mediaType == "application/json" || strings.HasSuffix(mediaType, "+json") {
-			return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("download failed: gateway returned JSON instead of a file"), jsonMode)
-		}
+		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("download failed: gateway did not return a 302 redirect"), jsonMode)
 	}
 
+	reader := bufio.NewReader(resp.Body)
+	mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if mediaType == "text/html" {
+		prefix, peekErr := reader.Peek(4096)
+		if peekErr != nil && peekErr != io.EOF {
+			return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("read download: %w", peekErr), jsonMode)
+		}
+		page := strings.ToLower(string(prefix))
+		if loginPasswordInput.Match(prefix) || strings.Contains(page, "<title>login") || strings.Contains(page, "<title>sign in") {
+			return cmdutil.HandleCommandError(cmd.ErrOrStderr(), errDownloadLoginRedirect, jsonMode)
+		}
+	}
 	var out io.Writer = cmd.OutOrStdout()
+	var temp *os.File
 	if output != "" {
-		f, err := os.Create(output)
+		f, err := os.CreateTemp(filepath.Dir(output), ".tier0-download-*")
 		if err != nil {
 			return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("create output: %w", err), jsonMode)
 		}
-		defer f.Close()
+		temp = f
+		defer func() { f.Close(); os.Remove(f.Name()) }()
 		out = f
 	}
-	if _, err := io.Copy(out, resp.Body); err != nil {
+	if _, err := io.Copy(out, reader); err != nil {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("write output: %w", err), jsonMode)
+	}
+	if temp != nil {
+		if err := temp.Close(); err != nil {
+			return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("close output: %w", err), jsonMode)
+		}
+		if err := os.Rename(temp.Name(), output); err != nil {
+			return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("replace output: %w", err), jsonMode)
+		}
 	}
 
 	if output != "" && !jsonMode {

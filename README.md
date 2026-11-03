@@ -187,7 +187,11 @@ key explicitly; changes within the same origin retain the key.
 returns HTTP 404 before a redirect. It follows public or presigned cross-origin
 storage redirects only over HTTPS, without forwarding request headers or the API
 key. HTTPS-to-HTTP downgrades and more than five redirects are rejected. Treat
-presigned URLs as secrets.
+presigned URLs as secrets. The gateway must return a 302 redirect; recognizable
+login redirects and login pages are rejected. Downloads written with `-o` use a
+temporary file in the destination directory and replace the target only after a
+complete transfer. HTML login detection is heuristic and may also reject an HTML
+file containing a login form.
 
 Base URL resolution differs by command. `login` uses its `--base-url` flag,
 then `TIER0_BASE_URL`, the saved base URL, and finally `https://tier0.dev`.
