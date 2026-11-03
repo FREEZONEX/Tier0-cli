@@ -14,7 +14,7 @@ import (
 )
 
 func TestWhoamiAndDoctorUseCurrentKeyIdentity(t *testing.T) {
-	for _, keyType := range []string{"personal", "service", "app"} {
+	for _, keyType := range []string{"personal", "service", "app", "agent", "future_type"} {
 		t.Run(keyType, func(t *testing.T) {
 			home := t.TempDir()
 			t.Setenv("HOME", home)
@@ -25,7 +25,7 @@ func TestWhoamiAndDoctorUseCurrentKeyIdentity(t *testing.T) {
 					t.Error("configured key was not forwarded")
 				}
 				switch r.URL.Path {
-				case "/openapi/v1/info":
+				case "/openapi/v2/info":
 					fmt.Fprint(w, `{"code":200,"data":{"name":"fixture"}}`)
 				case "/openapi/v2/auth/whoami":
 					fmt.Fprintf(w, `{"code":200,"data":{"keyType":%q,"permissions":["uns.read"]}}`, keyType)

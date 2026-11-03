@@ -54,7 +54,7 @@ func TestDoctorUsesProfileTargetForConfiguredKeys(t *testing.T) {
 					t.Error("profile key was not used")
 				}
 				switch r.URL.Path {
-				case "/openapi/v1/info":
+				case "/openapi/v2/info":
 					fmt.Fprint(w, `{"code":200,"data":{"name":"fixture"}}`)
 				case "/openapi/v2/auth/whoami":
 					fmt.Fprintf(w, `{"code":200,"data":{"keyType":%q}}`, tc.name)
@@ -134,7 +134,7 @@ func TestDoctorAllowsSameOriginRedirect(t *testing.T) {
 			t.Error("key was not preserved for the profile origin")
 		}
 		switch r.URL.Path {
-		case "/openapi/v1/info":
+		case "/openapi/v2/info":
 			http.Redirect(w, r, "/info", http.StatusTemporaryRedirect)
 		case "/info":
 			fmt.Fprint(w, `{"code":200,"data":{"name":"fixture"}}`)
@@ -156,7 +156,7 @@ func TestDoctorAllowsSameOriginRedirect(t *testing.T) {
 func TestDoctorWithoutKeyUsesEnvironmentForConnectivity(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/openapi/v1/info" || r.Header.Get("x-api-key") != "" {
+		if r.URL.Path != "/openapi/v2/info" || r.Header.Get("x-api-key") != "" {
 			t.Error("unexpected unauthenticated connectivity request")
 		}
 		fmt.Fprint(w, `{"code":200,"data":{"name":"fixture"}}`)

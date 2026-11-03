@@ -12,7 +12,7 @@ import (
 )
 
 func TestWhoamiUsesCurrentContractForProductKeys(t *testing.T) {
-	for _, keyType := range []string{"personal", "service", "app"} {
+	for _, keyType := range []string{"personal", "service", "app", "agent", "future_type"} {
 		t.Run(keyType, func(t *testing.T) {
 			key := "synthetic-" + keyType
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -61,6 +61,35 @@ func TestWhoamiFallsBackOnlyOnHTTPNotFound(t *testing.T) {
 			want := []string{"/openapi/v2/auth/whoami"}
 			if status == http.StatusNotFound {
 				want = append(want, "/openapi/v1/auth/whoami")
+			}
+			if !reflect.DeepEqual(paths, want) {
+				t.Fatalf("requests = %v, want %v", paths, want)
+			}
+			if (status == http.StatusNotFound || status == http.StatusOK) != (err == nil) {
+				t.Fatalf("unexpected error status: %v", err)
+			}
+		})
+	}
+}
+
+func TestInfoFallsBackOnlyOnHTTPNotFound(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusUnauthorized, http.StatusForbidden, http.StatusServiceUnavailable, http.StatusOK} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			var paths []string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				paths = append(paths, r.URL.Path)
+				if len(paths) == 1 {
+					w.WriteHeader(status)
+					io.WriteString(w, `{"code":403,"msg":"denied"}`)
+					return
+				}
+				io.WriteString(w, `{"code":200}`)
+			}))
+			defer server.Close()
+			_, err := New(server.URL, "synthetic-key").Info(context.Background(), false)
+			want := []string{"/openapi/v2/info"}
+			if status == http.StatusNotFound {
+				want = append(want, "/openapi/v1/info")
 			}
 			if !reflect.DeepEqual(paths, want) {
 				t.Fatalf("requests = %v, want %v", paths, want)

@@ -80,7 +80,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		var whoResp string
 		whoErr := targetErr
 		if whoErr == nil {
-			whoResp, whoErr = client.NewBound(baseURL, profile.APIKey).Whoami(cmd.Context(), debug)
+			whoResp, whoErr = client.New(baseURL, profile.APIKey).Whoami(cmd.Context(), debug)
 		}
 		if whoErr != nil {
 			checks = append(checks, doctorCheck{Name: "auth_whoami", OK: false, Message: whoErr.Error(), Hint: "Verify the API key and workspace permissions."})
@@ -132,7 +132,7 @@ func doctorFailure(checks []doctorCheck) error {
 func doctorInfo(ctx context.Context, baseURL, apiKey string, debug bool) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	resp, err := client.NewBound(baseURL, apiKey).DoAPI(ctx, "/openapi/v1/info", "POST", "{}", debug)
+	resp, err := client.New(baseURL, apiKey).Info(ctx, debug)
 	if err != nil {
 		return "", err
 	}

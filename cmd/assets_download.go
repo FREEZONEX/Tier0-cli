@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	apiclient "github.com/FREEZONEX/Tier0-cli/internal/client"
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
 	"github.com/FREEZONEX/Tier0-cli/internal/config"
 	"github.com/spf13/cobra"
@@ -60,7 +61,7 @@ func runAssetsDownload(cmd *cobra.Command, args []string) error {
 	if debug {
 		fmt.Fprintf(os.Stderr, "[debug] GET %s\n", u)
 	}
-	client := &http.Client{Timeout: 60 * time.Second}
+	client := &http.Client{Timeout: 60 * time.Second, CheckRedirect: apiclient.CheckCredentialRedirect}
 	resp, err := client.Do(req)
 	if err != nil {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("download: %w", err), jsonMode)

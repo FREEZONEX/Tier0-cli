@@ -28,24 +28,20 @@ func New(baseURL, apiKey string) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		apiKey:  apiKey,
-		client:  &http.Client{Timeout: 30 * time.Second},
+		client:  &http.Client{Timeout: 30 * time.Second, CheckRedirect: CheckCredentialRedirect},
 	}
 }
 
-// NewBound prevents a configured key from following redirects to another origin.
-func NewBound(baseURL, apiKey string) *Client {
-	c := New(baseURL, apiKey)
-	c.client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if len(via) >= 10 {
-			return errors.New("stopped after 10 redirects")
-		}
-		if apiKey != "" && len(via) > 0 &&
-			(!strings.EqualFold(req.URL.Scheme, via[0].URL.Scheme) || !strings.EqualFold(req.URL.Host, via[0].URL.Host)) {
-			return errors.New("refusing to redirect API key to another origin")
-		}
-		return nil
+// CheckCredentialRedirect prevents an API key from reaching another origin.
+func CheckCredentialRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
 	}
-	return c
+	if len(via) > 0 && via[0].Header.Get("x-api-key") != "" &&
+		(!strings.EqualFold(req.URL.Scheme, via[0].URL.Scheme) || !strings.EqualFold(req.URL.Host, via[0].URL.Host)) {
+		return errors.New("refusing to redirect API key to another origin")
+	}
+	return nil
 }
 
 // DoAPI calls an API endpoint.

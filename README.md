@@ -70,7 +70,9 @@ tier0 config --api-key sk-per-xxxxxx
 The browser login issues a Personal Key. An already issued Personal, Service,
 or App Key can be configured explicitly; the server determines its identity
 and effective permissions. `tier0 auth whoami` and `tier0 doctor` use the v2
-identity endpoint, falling back to v1 only when v2 returns HTTP 404. App-bound
+identity endpoint, falling back to v1 only when v2 returns HTTP 404. `doctor`
+does the same for the info endpoint. API requests carrying a key, including
+file downloads, reject cross-origin redirects. App-bound
 operations may need additional server-verified authorization that this CLI
 does not provide; configuring an App Key does not bypass those checks.
 
