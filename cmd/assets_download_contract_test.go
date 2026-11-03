@@ -218,3 +218,96 @@ func TestDownloadBlocksHTTPSDowngradeAndRedactsLocation(t *testing.T) {
 		t.Fatal("downgrade not blocked safely")
 	}
 }
+
+func TestSameOriginSignedRedirectNeverSendsReferer(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	secret := "same-origin-signed-secret"
+	gateway := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Referer") != "" {
+			t.Error("redirect sent a Referer")
+		}
+		switch r.URL.Path {
+		case "/openapi/v2/assets/files/download":
+			http.Redirect(w, r, "/signed?signature="+secret, 302)
+		case "/signed":
+			http.Redirect(w, r, "/file", 302)
+		case "/file":
+			fmt.Fprint(w, "same-origin file")
+		default:
+			t.Error("unexpected path")
+		}
+	}))
+	defer gateway.Close()
+	trustDownloadServers(t, gateway)
+	if err := config.SaveProfile(config.Profile{BaseURL: gateway.URL, APIKey: "synthetic"}); err != nil {
+		t.Fatal(err)
+	}
+	out, stderr, err := executeRootForTest("assets", "download", "--file-path", "key")
+	if err != nil || out != "same-origin file" || strings.Contains(stderr, secret) {
+		t.Fatal("same-origin download failed or exposed signature")
+	}
+}
+
+func TestGatewayJSONBusinessErrorDoesNotOverwriteFile(t *testing.T) {
+	for _, version := range []string{"v2", "v1 fallback"} {
+		t.Run(version, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if version == "v1 fallback" && r.URL.Path == "/openapi/v2/assets/files/download" {
+					w.WriteHeader(404)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json; charset=utf-8")
+				fmt.Fprint(w, `{"code":400123,"msg":"permission denied"}`)
+			}))
+			defer gateway.Close()
+			if err := config.SaveProfile(config.Profile{BaseURL: gateway.URL, APIKey: "synthetic"}); err != nil {
+				t.Fatal(err)
+			}
+			file := filepath.Join(t.TempDir(), "existing")
+			if err := os.WriteFile(file, []byte("original"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			out, stderr, err := executeRootForTest("assets", "download", "--file-path", "key", "-o", file, "--json")
+			data, readErr := os.ReadFile(file)
+			if err == nil || readErr != nil || string(data) != "original" || !strings.Contains(stderr, "gateway returned JSON") || strings.Contains(out, "permission denied") {
+				t.Fatal("gateway business error treated as a file")
+			}
+		})
+	}
+}
+
+func TestRedirectedStorageJSONIsDownloaded(t *testing.T) {
+	for _, sameOrigin := range []bool{true, false} {
+		t.Run(fmt.Sprintf("same_origin_%v", sameOrigin), func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			payload := `{"code":400123,"msg":"this is a legitimate JSON file"}`
+			storage := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, payload)
+			}))
+			defer storage.Close()
+			gateway := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/file" {
+					w.Header().Set("Content-Type", "application/json")
+					fmt.Fprint(w, payload)
+					return
+				}
+				target := storage.URL + "/file?signature=secret"
+				if sameOrigin {
+					target = "/file?signature=secret"
+				}
+				http.Redirect(w, r, target, 302)
+			}))
+			defer gateway.Close()
+			trustDownloadServers(t, gateway, storage)
+			if err := config.SaveProfile(config.Profile{BaseURL: gateway.URL, APIKey: "synthetic"}); err != nil {
+				t.Fatal(err)
+			}
+			out, _, err := executeRootForTest("assets", "download", "--file-path", "key")
+			if err != nil || out != payload {
+				t.Fatal("legitimate JSON file was not downloaded")
+			}
+		})
+	}
+}

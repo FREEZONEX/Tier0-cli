@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -35,6 +36,8 @@ func downloadRedirect(req *http.Request, via []*http.Request) error {
 	if strings.EqualFold(previous.Scheme, "https") && !strings.EqualFold(req.URL.Scheme, "https") {
 		return errDownloadDowngrade
 	}
+	// net/http may populate Referer with the previous URL, including a signature.
+	req.Header.Del("Referer")
 	origin := func(u *url.URL) string { return u.Scheme + "://" + u.Host }
 	crossed := !config.SameOrigin(origin(via[0].URL), origin(req.URL))
 	for _, prior := range via[1:] {
@@ -124,6 +127,14 @@ func runAssetsDownload(cmd *cobra.Command, args []string) error {
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("download failed: status=%d", resp.StatusCode), jsonMode)
+	}
+	// The gateway contract is a redirect, or a JSON business-error envelope.
+	// Do not apply this rule to a redirected storage response: JSON is a valid file.
+	if !redirected {
+		mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+		if mediaType == "application/json" || strings.HasSuffix(mediaType, "+json") {
+			return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("download failed: gateway returned JSON instead of a file"), jsonMode)
+		}
 	}
 
 	var out io.Writer = cmd.OutOrStdout()
