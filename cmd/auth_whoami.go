@@ -23,7 +23,7 @@ func runAuthWhoami(cmd *cobra.Command, args []string) error {
 	jsonMode, _ := cmd.Flags().GetBool("json")
 	debug, _ := cmd.Flags().GetBool("debug")
 
-	resp, err := cmdutil.DoAPI(cmd.Context(), "/openapi/v1/auth/whoami", "POST", "{}", debug)
+	resp, err := cmdutil.DoWhoami(cmd.Context(), debug)
 	if err != nil {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
 	}

@@ -65,7 +65,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		})
 	} else {
 		checks = append(checks, doctorCheck{Name: "api_key", OK: true, Message: maskSecret(profile.APIKey)})
-		whoResp, whoErr := client.New(baseURL, profile.APIKey).DoAPI(cmd.Context(), "/openapi/v1/auth/whoami", "POST", "{}", debug)
+		whoResp, whoErr := client.New(baseURL, profile.APIKey).Whoami(cmd.Context(), debug)
 		if whoErr != nil {
 			checks = append(checks, doctorCheck{Name: "auth_whoami", OK: false, Message: whoErr.Error(), Hint: "Verify the API key and workspace permissions."})
 		} else if err := cmdutil.CheckOK(whoResp); err != nil {

@@ -19,19 +19,35 @@ import (
 
 // DoAPI loads the profile, creates a client, and calls the API.
 func DoAPI(ctx context.Context, endpoint, method, body string, debug bool) (string, error) {
+	c, err := configuredClient()
+	if err != nil {
+		return "", err
+	}
+	return c.DoAPI(ctx, endpoint, method, body, debug)
+}
+
+// DoWhoami inspects the configured key using the supported identity endpoint.
+func DoWhoami(ctx context.Context, debug bool) (string, error) {
+	c, err := configuredClient()
+	if err != nil {
+		return "", err
+	}
+	return c.Whoami(ctx, debug)
+}
+
+func configuredClient() (*client.Client, error) {
 	profile, err := config.LoadProfile()
 	if err != nil {
-		return "", errs.New(errs.CategoryConfig, 0,
+		return nil, errs.New(errs.CategoryConfig, 0,
 			"failed to load config: "+err.Error()).
 			WithHint("Run tier0 config to set up the CLI.", "tier0 config")
 	}
 	if profile.APIKey == "" {
-		return "", errs.New(errs.CategoryAuthentication, 401,
+		return nil, errs.New(errs.CategoryAuthentication, 401,
 			"API Key not configured.").
 			WithHint("Authenticate first.", "tier0 login")
 	}
-	c := client.New(profile.BaseURL, profile.APIKey)
-	return c.DoAPI(ctx, endpoint, method, body, debug)
+	return client.New(profile.BaseURL, profile.APIKey), nil
 }
 
 // ResolveBaseURL resolves the effective base URL from arg, env, or config.
