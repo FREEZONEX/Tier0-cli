@@ -86,6 +86,8 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 			checks = append(checks, doctorCheck{Name: "auth_whoami", OK: false, Message: whoErr.Error(), Hint: "Verify the API key and workspace permissions."})
 		} else if err := cmdutil.CheckOK(whoResp); err != nil {
 			checks = append(checks, doctorCheck{Name: "auth_whoami", OK: false, Message: err.Error(), Hint: "Verify the API key and workspace permissions."})
+		} else if err := client.ValidateWhoami(whoResp); err != nil {
+			checks = append(checks, doctorCheck{Name: "auth_whoami", OK: false, Message: err.Error(), Hint: "Verify the API key and workspace permissions."})
 		} else {
 			checks = append(checks, doctorCheck{Name: "auth_whoami", OK: true, Message: doctorWhoamiSummary(whoResp)})
 		}
@@ -137,6 +139,9 @@ func doctorInfo(ctx context.Context, baseURL, apiKey string, debug bool) (string
 		return "", err
 	}
 	if err := cmdutil.CheckOK(resp); err != nil {
+		return "", err
+	}
+	if err := client.ValidateInfo(resp); err != nil {
 		return "", err
 	}
 	return doctorInfoSummary(resp), nil

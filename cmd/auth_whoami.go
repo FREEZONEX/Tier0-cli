@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/FREEZONEX/Tier0-cli/internal/client"
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
 	"github.com/FREEZONEX/Tier0-cli/internal/notice"
 	"github.com/spf13/cobra"
@@ -30,6 +31,9 @@ func runAuthWhoami(cmd *cobra.Command, args []string) error {
 	if err := cmdutil.CheckOK(resp); err != nil {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
 	}
+	if err := client.ValidateWhoami(resp); err != nil {
+		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
+	}
 
 	stdout := cmd.OutOrStdout()
 	if jsonMode {
@@ -50,9 +54,7 @@ func runAuthWhoami(cmd *cobra.Command, args []string) error {
 		KeyType       string   `json:"keyType"`
 	}
 	if err := json.Unmarshal([]byte(cmdutil.ExtractData(resp)), &result); err != nil {
-		fmt.Fprintln(stdout, resp)
-		checker.Emit("", false, stdout, cmd.ErrOrStderr())
-		return nil
+		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("invalid whoami response"), jsonMode)
 	}
 
 	fmt.Fprintf(stdout, "%-16s %d\n", "UserID:", result.UserID)

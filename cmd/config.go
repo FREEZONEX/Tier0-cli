@@ -52,15 +52,28 @@ func runConfig(cmd *cobra.Command, args []string) error {
 			return configCommandError(cmd, "failed to load config: "+err.Error(), err)
 		}
 		if setBaseURL != "" {
-			profile.BaseURL = strings.TrimRight(setBaseURL, "/")
+			setBaseURL = strings.TrimRight(strings.TrimSpace(setBaseURL), "/")
+			if _, err := config.Origin(setBaseURL); err != nil {
+				return invalidArgument(cmd, "--base-url", "expected an HTTP(S) URL without credentials, query, or fragment")
+			}
+			if !config.SameOrigin(profile.BaseURL, setBaseURL) && setAPIKey == "" && profile.APIKey != "" {
+				profile.APIKey = ""
+				if !jsonMode {
+					fmt.Fprintln(stdout, "Saved API key cleared because the base URL origin changed.")
+				}
+			}
+			profile.BaseURL = setBaseURL
 		}
 		if setAPIKey != "" {
 			profile.APIKey = strings.TrimSpace(setAPIKey)
+			if profile.APIKey == "" {
+				return invalidArgument(cmd, "--api-key", "API key must not be blank")
+			}
 		}
 		if setLang != "" {
 			profile.Lang = "en"
 		}
-		if err := config.SaveProfile(profile); err != nil {
+		if err := config.ReplaceProfile(profile); err != nil {
 			return configCommandError(cmd, "failed to save config: "+err.Error(), err)
 		}
 		if jsonMode {

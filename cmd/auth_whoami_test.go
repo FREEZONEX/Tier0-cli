@@ -26,9 +26,9 @@ func TestWhoamiAndDoctorUseCurrentKeyIdentity(t *testing.T) {
 				}
 				switch r.URL.Path {
 				case "/openapi/v2/info":
-					fmt.Fprint(w, `{"code":200,"data":{"name":"fixture"}}`)
+					fmt.Fprint(w, `{"code":200,"data":{"name":"fixture","version":"dev"}}`)
 				case "/openapi/v2/auth/whoami":
-					fmt.Fprintf(w, `{"code":200,"data":{"keyType":%q,"permissions":["uns.read"]}}`, keyType)
+					fmt.Fprintf(w, `{"code":200,"data":{"workspaceID":1,"keyType":%q,"permissions":["uns.read"]}}`, keyType)
 				default:
 					t.Errorf("unexpected endpoint %s", r.URL.Path)
 					w.WriteHeader(http.StatusNotFound)

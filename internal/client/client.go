@@ -32,6 +32,9 @@ func New(baseURL, apiKey string) *Client {
 	}
 }
 
+// ErrCredentialRedirect avoids including a potentially signed redirect URL in errors.
+var ErrCredentialRedirect = errors.New("refusing to redirect API key to another origin")
+
 // CheckCredentialRedirect prevents an API key from reaching another origin.
 func CheckCredentialRedirect(req *http.Request, via []*http.Request) error {
 	if len(via) >= 10 {
@@ -39,7 +42,7 @@ func CheckCredentialRedirect(req *http.Request, via []*http.Request) error {
 	}
 	if len(via) > 0 && via[0].Header.Get("x-api-key") != "" &&
 		(!strings.EqualFold(req.URL.Scheme, via[0].URL.Scheme) || !strings.EqualFold(req.URL.Host, via[0].URL.Host)) {
-		return errors.New("refusing to redirect API key to another origin")
+		return ErrCredentialRedirect
 	}
 	return nil
 }
@@ -87,6 +90,9 @@ func (c *Client) DoAPI(ctx context.Context, endpoint, method, body string, debug
 
 	resp, err := c.client.Do(req)
 	if err != nil {
+		if errors.Is(err, ErrCredentialRedirect) {
+			err = ErrCredentialRedirect
+		}
 		return "", errs.New(errs.CategoryNetwork, 0, "request failed: "+err.Error()).
 			WithHint("Check network connectivity and the base URL.", "tier0 config").
 			WithRetryable()

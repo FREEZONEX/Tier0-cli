@@ -179,6 +179,16 @@ Treat command arguments, shell history, and logs as potentially visible when
 passing a key directly. The existing completed `login --json` response includes
 the issued Personal Key and must be handled as secret output.
 
+Changing `config --base-url` to a different HTTP origin (scheme, host, or port)
+clears the saved API key. Supply `--api-key` in the same command to bind a new
+key explicitly; changes within the same origin retain the key.
+
+`assets download` follows redirects only within the configured origin. Cloud
+file downloads can redirect to a different object-storage origin, including a
+presigned URL; those downloads are currently blocked by the CLI and no API key
+is sent to that storage origin. Use a trusted direct storage download workflow
+when available, and treat presigned URLs and diagnostic output as secrets.
+
 Base URL resolution differs by command. `login` uses its `--base-url` flag,
 then `TIER0_BASE_URL`, the saved base URL, and finally `https://tier0.dev`.
 Dry-run previews resolve `TIER0_BASE_URL` before the saved URL, while actual

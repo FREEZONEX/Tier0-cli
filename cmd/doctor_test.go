@@ -55,9 +55,9 @@ func TestDoctorUsesProfileTargetForConfiguredKeys(t *testing.T) {
 				}
 				switch r.URL.Path {
 				case "/openapi/v2/info":
-					fmt.Fprint(w, `{"code":200,"data":{"name":"fixture"}}`)
+					fmt.Fprint(w, `{"code":200,"data":{"name":"fixture","version":"dev"}}`)
 				case "/openapi/v2/auth/whoami":
-					fmt.Fprintf(w, `{"code":200,"data":{"keyType":%q}}`, tc.name)
+					fmt.Fprintf(w, `{"code":200,"data":{"workspaceID":1,"keyType":%q}}`, tc.name)
 				default:
 					t.Errorf("unexpected path %s", r.URL.Path)
 				}
@@ -67,7 +67,7 @@ func TestDoctorUsesProfileTargetForConfiguredKeys(t *testing.T) {
 				t.Fatal(err)
 			}
 			out, stderr, err := executeRootForTest("doctor", "--json")
-			if err != nil || !strings.Contains(out, `"type=`+tc.name+`"`) || !strings.Contains(out, server.URL) {
+			if err != nil || !strings.Contains(out, `type=`+tc.name) || !strings.Contains(out, server.URL) {
 				t.Fatalf("doctor did not diagnose the saved profile: err=%v", err)
 			}
 			if requests != 2 || unexpectedRequests != 0 {
@@ -137,9 +137,9 @@ func TestDoctorAllowsSameOriginRedirect(t *testing.T) {
 		case "/openapi/v2/info":
 			http.Redirect(w, r, "/info", http.StatusTemporaryRedirect)
 		case "/info":
-			fmt.Fprint(w, `{"code":200,"data":{"name":"fixture"}}`)
+			fmt.Fprint(w, `{"code":200,"data":{"name":"fixture","version":"dev"}}`)
 		case "/openapi/v2/auth/whoami":
-			fmt.Fprint(w, `{"code":200,"data":{"keyType":"service"}}`)
+			fmt.Fprint(w, `{"code":200,"data":{"workspaceID":1,"keyType":"service"}}`)
 		default:
 			t.Errorf("unexpected path %s", r.URL.Path)
 		}
@@ -159,7 +159,7 @@ func TestDoctorWithoutKeyUsesEnvironmentForConnectivity(t *testing.T) {
 		if r.URL.Path != "/openapi/v2/info" || r.Header.Get("x-api-key") != "" {
 			t.Error("unexpected unauthenticated connectivity request")
 		}
-		fmt.Fprint(w, `{"code":200,"data":{"name":"fixture"}}`)
+		fmt.Fprint(w, `{"code":200,"data":{"name":"fixture","version":"dev"}}`)
 	}))
 	defer server.Close()
 	t.Setenv("TIER0_BASE_URL", server.URL)

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -64,6 +65,9 @@ func runAssetsDownload(cmd *cobra.Command, args []string) error {
 	client := &http.Client{Timeout: 60 * time.Second, CheckRedirect: apiclient.CheckCredentialRedirect}
 	resp, err := client.Do(req)
 	if err != nil {
+		if errors.Is(err, apiclient.ErrCredentialRedirect) {
+			err = apiclient.ErrCredentialRedirect
+		}
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("download: %w", err), jsonMode)
 	}
 	defer resp.Body.Close()
