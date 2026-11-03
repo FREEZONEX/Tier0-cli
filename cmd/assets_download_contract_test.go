@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -312,6 +313,9 @@ func TestRedirectedStorageJSONIsDownloaded(t *testing.T) {
 			if err != nil || out != payload {
 				t.Fatal("legitimate JSON file was not downloaded")
 			}
+			if runtime.GOOS == "windows" {
+				return
+			}
 			dir := t.TempDir()
 			file := filepath.Join(dir, "data.json")
 			if err := os.WriteFile(file, []byte("old"), 0600); err != nil {
@@ -339,8 +343,6 @@ func TestGatewayRejectsDirectResponseAndLoginRedirect(t *testing.T) {
 		{"binary", 200, "", "not a redirect"},
 		{"no location", 302, "", ""},
 		{"wrong redirect status", 307, "/file", ""},
-		{"login redirect", 302, "/login?token=secret", ""},
-		{"sign in redirect", 302, "/auth/sign-in", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("HOME", t.TempDir())
@@ -375,28 +377,24 @@ func TestGatewayRejectsDirectResponseAndLoginRedirect(t *testing.T) {
 	}
 }
 
-func TestDownloadRejectsLoginHTMLAfterRedirect(t *testing.T) {
+func TestDownloadAllowsLoginNamedHTMLFile(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	payload := `<html><title>login</title><form><input TYPE = "password"></form></html>`
 	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/openapi/v2/assets/files/download" {
-			http.Redirect(w, r, "/page", 302)
+			http.Redirect(w, r, "/login", 302)
 			return
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, `<html><form><input TYPE = "password"></form></html>`)
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, payload)
 	}))
 	defer gateway.Close()
 	if err := config.SaveProfile(config.Profile{BaseURL: gateway.URL, APIKey: "synthetic"}); err != nil {
 		t.Fatal(err)
 	}
-	file := filepath.Join(t.TempDir(), "existing")
-	if err := os.WriteFile(file, []byte("original"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	_, _, err := executeRootForTest("assets", "download", "--file-path", "key", "-o", file)
-	data, _ := os.ReadFile(file)
-	if err == nil || string(data) != "original" {
-		t.Fatal("login page accepted")
+	out, _, err := executeRootForTest("assets", "download", "--file-path", "login")
+	if err != nil || out != payload {
+		t.Fatal("legitimate HTML object was rejected")
 	}
 }
 
@@ -424,5 +422,100 @@ func TestDownloadInterruptedDoesNotReplaceFile(t *testing.T) {
 	entries, _ := os.ReadDir(dir)
 	if err == nil || string(data) != "original" || len(entries) != 1 {
 		t.Fatal("partial download replaced file or left temporary file")
+	}
+}
+
+func TestDownloadOutputPermissionsAndSymlinkPolicy(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission semantics")
+	}
+	t.Setenv("HOME", t.TempDir())
+	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/openapi/v2/assets/files/download" {
+			http.Redirect(w, r, "/object", 302)
+			return
+		}
+		fmt.Fprint(w, "downloaded")
+	}))
+	defer gateway.Close()
+	if err := config.SaveProfile(config.Profile{BaseURL: gateway.URL, APIKey: "synthetic"}); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file")
+	if err := os.WriteFile(file, []byte("original"), 0640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(file, 0640); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeRootForTest("assets", "download", "--file-path", "key", "-o", file); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(file)
+	if err != nil || info.Mode().Perm() != 0640 {
+		t.Fatal("existing permissions not preserved")
+	}
+	data, _ := os.ReadFile(file)
+	if string(data) != "downloaded" {
+		t.Fatal("file not replaced")
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(file, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeRootForTest("assets", "download", "--file-path", "key", "-o", link); err == nil {
+		t.Fatal("symlink output was accepted")
+	}
+	linkInfo, err := os.Lstat(link)
+	if err != nil || linkInfo.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("symlink changed")
+	}
+	data, _ = os.ReadFile(file)
+	if string(data) != "downloaded" {
+		t.Fatal("symlink target changed")
+	}
+}
+
+func TestWindowsDownloadDestinationPolicy(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file")
+	if info, err := downloadDestination(file, "windows"); err != nil || info != nil {
+		t.Fatal("new Windows destination should be accepted")
+	}
+	if err := os.WriteFile(file, []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := downloadDestination(file, "windows"); err == nil {
+		t.Fatal("existing Windows file must be refused to preserve ACL")
+	}
+	if runtime.GOOS == "windows" {
+		t.Setenv("HOME", t.TempDir())
+		gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/openapi/v2/assets/files/download" {
+				http.Redirect(w, r, "/object", 302)
+				return
+			}
+			fmt.Fprint(w, "replacement")
+		}))
+		defer gateway.Close()
+		if err := config.SaveProfile(config.Profile{BaseURL: gateway.URL, APIKey: "synthetic"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := executeRootForTest("assets", "download", "--file-path", "key", "-o", file); err == nil {
+			t.Fatal("existing Windows output accepted")
+		}
+		data, _ := os.ReadFile(file)
+		if string(data) != "original" {
+			t.Fatal("existing Windows file changed")
+		}
+		newFile := filepath.Join(dir, "new")
+		if _, _, err := executeRootForTest("assets", "download", "--file-path", "key", "-o", newFile); err != nil {
+			t.Fatalf("new Windows output: %v", err)
+		}
+		data, _ = os.ReadFile(newFile)
+		if string(data) != "replacement" {
+			t.Fatal("new Windows output incorrect")
+		}
 	}
 }

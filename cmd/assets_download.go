@@ -1,16 +1,14 @@
 package cmd
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -25,18 +23,25 @@ var (
 	errDownloadDowngrade       = errors.New("refusing HTTPS downgrade in download redirect")
 	errDownloadInsecureOrigin  = errors.New("refusing insecure cross-origin download redirect")
 	errDownloadGatewayRedirect = errors.New("gateway download must return a 302 redirect")
-	errDownloadLoginRedirect   = errors.New("refusing download redirect to a login page")
-	loginPasswordInput         = regexp.MustCompile(`(?is)<input\b[^>]*\btype\s*=\s*["']?password\b`)
 )
 
-func loginPath(u *url.URL) bool {
-	for _, part := range strings.Split(strings.ToLower(u.Path), "/") {
-		switch part {
-		case "login", "log-in", "signin", "sign-in", "authorize":
-			return true
-		}
+// Inspect the directory entry without following symbolic links. On Windows we
+// cannot preserve an existing file's ACL using chmod and rename.
+func downloadDestination(path, goos string) (os.FileInfo, error) {
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil, nil
 	}
-	return false
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("output must be a regular file, not a symlink or special file")
+	}
+	if goos == "windows" {
+		return nil, fmt.Errorf("replacing an existing output file is not supported on Windows")
+	}
+	return info, nil
 }
 
 // downloadRedirect is separate from the API policy: storage URLs can have a
@@ -47,9 +52,6 @@ func downloadRedirect(req *http.Request, via []*http.Request) error {
 	}
 	if len(via) == 0 || req.URL.User != nil || (req.URL.Scheme != "https" && req.URL.Scheme != "http") {
 		return errDownloadRedirectInvalid
-	}
-	if loginPath(req.URL) {
-		return errDownloadLoginRedirect
 	}
 	previous := via[len(via)-1].URL
 	if strings.EqualFold(previous.Scheme, "https") && !strings.EqualFold(req.URL.Scheme, "https") {
@@ -139,7 +141,7 @@ func runAssetsDownload(cmd *cobra.Command, args []string) error {
 	}
 	if err != nil {
 		// net/http errors can contain a complete presigned Location URL.
-		for _, safe := range []error{errDownloadRedirectLimit, errDownloadRedirectInvalid, errDownloadDowngrade, errDownloadInsecureOrigin, errDownloadGatewayRedirect, errDownloadLoginRedirect} {
+		for _, safe := range []error{errDownloadRedirectLimit, errDownloadRedirectInvalid, errDownloadDowngrade, errDownloadInsecureOrigin, errDownloadGatewayRedirect} {
 			if errors.Is(err, safe) {
 				return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("download: %w", safe), jsonMode)
 			}
@@ -154,21 +156,14 @@ func runAssetsDownload(cmd *cobra.Command, args []string) error {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("download failed: gateway did not return a 302 redirect"), jsonMode)
 	}
 
-	reader := bufio.NewReader(resp.Body)
-	mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
-	if mediaType == "text/html" {
-		prefix, peekErr := reader.Peek(4096)
-		if peekErr != nil && peekErr != io.EOF {
-			return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("read download: %w", peekErr), jsonMode)
-		}
-		page := strings.ToLower(string(prefix))
-		if loginPasswordInput.Match(prefix) || strings.Contains(page, "<title>login") || strings.Contains(page, "<title>sign in") {
-			return cmdutil.HandleCommandError(cmd.ErrOrStderr(), errDownloadLoginRedirect, jsonMode)
-		}
-	}
 	var out io.Writer = cmd.OutOrStdout()
 	var temp *os.File
+	var existing os.FileInfo
 	if output != "" {
+		existing, err = downloadDestination(output, runtime.GOOS)
+		if err != nil {
+			return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("output: %w", err), jsonMode)
+		}
 		f, err := os.CreateTemp(filepath.Dir(output), ".tier0-download-*")
 		if err != nil {
 			return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("create output: %w", err), jsonMode)
@@ -177,15 +172,31 @@ func runAssetsDownload(cmd *cobra.Command, args []string) error {
 		defer func() { f.Close(); os.Remove(f.Name()) }()
 		out = f
 	}
-	if _, err := io.Copy(out, reader); err != nil {
+	if _, err := io.Copy(out, resp.Body); err != nil {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("write output: %w", err), jsonMode)
 	}
 	if temp != nil {
+		if existing != nil {
+			if err := temp.Chmod(existing.Mode().Perm()); err != nil {
+				return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("set output permissions: %w", err), jsonMode)
+			}
+		}
 		if err := temp.Close(); err != nil {
 			return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("close output: %w", err), jsonMode)
 		}
-		if err := os.Rename(temp.Name(), output); err != nil {
-			return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("replace output: %w", err), jsonMode)
+		if existing == nil {
+			// Link creates the destination only if it does not already exist.
+			if err := os.Link(temp.Name(), output); err != nil {
+				return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("create output: %w", err), jsonMode)
+			}
+		} else {
+			current, err := os.Lstat(output)
+			if err != nil || !current.Mode().IsRegular() || !os.SameFile(existing, current) {
+				return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("output changed during download"), jsonMode)
+			}
+			if err := os.Rename(temp.Name(), output); err != nil {
+				return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("replace output: %w", err), jsonMode)
+			}
 		}
 	}
 
