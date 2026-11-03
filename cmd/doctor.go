@@ -37,6 +37,14 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 
 	profile, cfgErr := config.LoadProfile()
 	baseURL := cmdutil.ResolveBaseURL("")
+	var targetErr error
+	if profile.APIKey != "" {
+		baseURL = strings.TrimRight(profile.BaseURL, "/")
+		if strings.TrimSpace(baseURL) == "" {
+			targetErr = fmt.Errorf("saved API key has no configured base URL")
+			cfgErr = targetErr
+		}
+	}
 	checks := []doctorCheck{}
 
 	if cfgErr != nil {
@@ -48,7 +56,11 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		checks = append(checks, doctorCheck{Name: "config", OK: true, Message: configMessage(baseURL, profile)})
 	}
 
-	infoResp, infoErr := doctorInfo(cmd.Context(), baseURL, profile.APIKey, debug)
+	var infoResp string
+	infoErr := targetErr
+	if infoErr == nil {
+		infoResp, infoErr = doctorInfo(cmd.Context(), baseURL, profile.APIKey, debug)
+	}
 	if infoErr != nil {
 		checks = append(checks, doctorCheck{
 			Name: "openapi_info", OK: false, Message: infoErr.Error(),
@@ -65,7 +77,11 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		})
 	} else {
 		checks = append(checks, doctorCheck{Name: "api_key", OK: true, Message: maskSecret(profile.APIKey)})
-		whoResp, whoErr := client.New(baseURL, profile.APIKey).Whoami(cmd.Context(), debug)
+		var whoResp string
+		whoErr := targetErr
+		if whoErr == nil {
+			whoResp, whoErr = client.NewBound(baseURL, profile.APIKey).Whoami(cmd.Context(), debug)
+		}
 		if whoErr != nil {
 			checks = append(checks, doctorCheck{Name: "auth_whoami", OK: false, Message: whoErr.Error(), Hint: "Verify the API key and workspace permissions."})
 		} else if err := cmdutil.CheckOK(whoResp); err != nil {
@@ -116,7 +132,7 @@ func doctorFailure(checks []doctorCheck) error {
 func doctorInfo(ctx context.Context, baseURL, apiKey string, debug bool) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	resp, err := client.New(baseURL, apiKey).DoAPI(ctx, "/openapi/v1/info", "POST", "{}", debug)
+	resp, err := client.NewBound(baseURL, apiKey).DoAPI(ctx, "/openapi/v1/info", "POST", "{}", debug)
 	if err != nil {
 		return "", err
 	}

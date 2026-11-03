@@ -179,11 +179,12 @@ the issued Personal Key and must be handled as secret output.
 
 Base URL resolution differs by command. `login` uses its `--base-url` flag,
 then `TIER0_BASE_URL`, the saved base URL, and finally `https://tier0.dev`.
-`doctor` and dry-run previews also resolve `TIER0_BASE_URL` before the saved
-URL, while actual OpenAPI requests use the saved URL. In particular, `doctor`
-sends the saved API key to its resolved base URL. Verify that any
-`TIER0_BASE_URL` points to the intended instance before running it, and do not
-use a dry-run URL as evidence of an actual request target when they differ.
+Dry-run previews resolve `TIER0_BASE_URL` before the saved URL, while actual
+OpenAPI requests use the saved URL. Do not use a dry-run URL as evidence of an
+actual request target when they differ. When a key is saved, `doctor` uses its
+saved base URL and refuses cross-origin redirects; a key without a saved base
+URL cannot be used for diagnostics. Without a saved key, `doctor` can use
+`TIER0_BASE_URL` for an unauthenticated connectivity check.
 
 Tier0 CLI output is English-only. The legacy `--lang en` flag is accepted for compatibility.
 
@@ -191,7 +192,7 @@ Tier0 CLI output is English-only. The legacy `--lang en` flag is accepted for co
 
 | Variable | Meaning |
 | --- | --- |
-| `TIER0_BASE_URL` | Override the base URL for login, doctor, dry-run previews, and MQTT profile selection; not for ordinary OpenAPI requests |
+| `TIER0_BASE_URL` | Override the base URL for login, dry-run previews, MQTT profile selection, and doctor connectivity checks without a saved key; not for authenticated doctor or ordinary OpenAPI requests |
 | `TIER0_MQTT_BROKER` | MQTT broker used without a saved credential profile |
 | `TIER0_MQTT_CLIENT_ID` | MQTT client ID used without a saved credential profile |
 | `TIER0_MQTT_USERNAME` | MQTT username used without a saved credential profile |

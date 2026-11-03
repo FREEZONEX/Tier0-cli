@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,6 +30,22 @@ func New(baseURL, apiKey string) *Client {
 		apiKey:  apiKey,
 		client:  &http.Client{Timeout: 30 * time.Second},
 	}
+}
+
+// NewBound prevents a configured key from following redirects to another origin.
+func NewBound(baseURL, apiKey string) *Client {
+	c := New(baseURL, apiKey)
+	c.client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		if apiKey != "" && len(via) > 0 &&
+			(!strings.EqualFold(req.URL.Scheme, via[0].URL.Scheme) || !strings.EqualFold(req.URL.Host, via[0].URL.Host)) {
+			return errors.New("refusing to redirect API key to another origin")
+		}
+		return nil
+	}
+	return c
 }
 
 // DoAPI calls an API endpoint.
