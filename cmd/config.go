@@ -76,7 +76,7 @@ func runConfig(cmd *cobra.Command, args []string) error {
 				if strings.TrimSpace(os.Getenv("TIER0_BASE_URL")) != "" {
 					return invalidArgument(cmd, "--base-url", "specify the target base URL when configuring a key with TIER0_BASE_URL set")
 				}
-				profile.BaseURL = "https://tier0.dev"
+				profile.BaseURL = cmdutil.DefaultBaseURL
 			}
 		}
 		if setLang != "" {

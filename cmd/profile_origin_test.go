@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
 	"github.com/FREEZONEX/Tier0-cli/internal/config"
 )
 
@@ -100,11 +101,12 @@ func TestExplicitKeyBindsDefaultAndDoesNotUseEnvironmentOverride(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			t.Setenv("HOME", t.TempDir())
 			t.Setenv("TIER0_BASE_URL", "")
+			defaultTarget := cmdutil.ResolveBaseURL("")
 			if _, _, err := executeRootForTest("config", "--api-key", "synthetic-"+kind, "--json"); err != nil {
 				t.Fatal(err)
 			}
 			profile, err := config.LoadProfile()
-			if err != nil || profile.BaseURL != "https://tier0.dev" || profile.APIKey != "synthetic-"+kind {
+			if err != nil || profile.BaseURL != defaultTarget || profile.APIKey != "synthetic-"+kind {
 				t.Fatal("explicit key was not bound to the default origin")
 			}
 		})

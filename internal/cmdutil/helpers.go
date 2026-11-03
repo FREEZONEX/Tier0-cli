@@ -50,6 +50,9 @@ func configuredClient() (*client.Client, error) {
 	return client.New(profile.BaseURL, profile.APIKey), nil
 }
 
+// DefaultBaseURL is the SaaS target when no origin is explicitly configured.
+const DefaultBaseURL = "https://tier0.dev"
+
 // ResolveBaseURL resolves the effective base URL from arg, env, or config.
 func ResolveBaseURL(baseURLArg string) string {
 	if baseURLArg != "" {
@@ -62,7 +65,7 @@ func ResolveBaseURL(baseURLArg string) string {
 	if profile.BaseURL != "" {
 		return strings.TrimRight(profile.BaseURL, "/")
 	}
-	return "https://tier0.dev"
+	return DefaultBaseURL
 }
 
 // CategoryOf returns the errs.Category for any error the CLI may produce.
