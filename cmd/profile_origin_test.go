@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
 	"github.com/FREEZONEX/Tier0-cli/internal/config"
 )
 
@@ -93,4 +94,53 @@ func TestConfigRetainsSameOriginAndRejectsInvalidURL(t *testing.T) {
 	if p.APIKey != "synthetic-key" || p.BaseURL != "https://example.test:443/path" {
 		t.Fatal("invalid URL changed profile")
 	}
+}
+
+func TestExplicitKeyBindsDefaultAndDoesNotUseEnvironmentOverride(t *testing.T) {
+	for _, kind := range []string{"personal", "service", "app"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("TIER0_BASE_URL", "")
+			defaultTarget := cmdutil.ResolveBaseURL("")
+			if _, _, err := executeRootForTest("config", "--api-key", "synthetic-"+kind, "--json"); err != nil {
+				t.Fatal(err)
+			}
+			profile, err := config.LoadProfile()
+			if err != nil || profile.BaseURL != defaultTarget || profile.APIKey != "synthetic-"+kind {
+				t.Fatal("explicit key was not bound to the default origin")
+			}
+		})
+	}
+	t.Run("saved target wins over environment", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		t.Setenv("TIER0_BASE_URL", "https://other.example")
+		if err := config.SaveProfile(config.Profile{BaseURL: "https://saved.example"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := executeRootForTest("config", "--api-key", "synthetic-key"); err != nil {
+			t.Fatal(err)
+		}
+		profile, _ := config.LoadProfile()
+		if profile.BaseURL != "https://saved.example" || profile.APIKey != "synthetic-key" {
+			t.Fatal("key was not bound to the saved target")
+		}
+	})
+	t.Run("ambiguous environment requires explicit target", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		t.Setenv("TIER0_BASE_URL", "https://other.example")
+		if _, _, err := executeRootForTest("config", "--api-key", "synthetic-key"); err == nil {
+			t.Fatal("accepted an ambiguous target")
+		}
+		profile, err := config.LoadProfile()
+		if err != nil || profile.APIKey != "" || profile.BaseURL != "" {
+			t.Fatal("failed configuration changed the profile")
+		}
+		if _, _, err := executeRootForTest("config", "--base-url", "https://other.example", "--api-key", "synthetic-key"); err != nil {
+			t.Fatal(err)
+		}
+		profile, _ = config.LoadProfile()
+		if profile.BaseURL != "https://other.example" || profile.APIKey != "synthetic-key" {
+			t.Fatal("explicit target and key were not saved")
+		}
+	})
 }
