@@ -22,7 +22,7 @@ func TestDownloadRejectsExternalStorageWithoutExposingSignedURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	out, stderr, err := executeRootForTest("assets", "download", "--file-path", "workspace/example", "--json")
-	if err == nil || !strings.Contains(stderr, "refusing to redirect") {
+	if err == nil || !strings.Contains(stderr, "refusing insecure cross-origin") {
 		t.Fatal("expected blocked external download")
 	}
 	if requests != 0 {

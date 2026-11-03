@@ -183,11 +183,11 @@ Changing `config --base-url` to a different HTTP origin (scheme, host, or port)
 clears the saved API key. Supply `--api-key` in the same command to bind a new
 key explicitly; changes within the same origin retain the key.
 
-`assets download` follows redirects only within the configured origin. Cloud
-file downloads can redirect to a different object-storage origin, including a
-presigned URL; those downloads are currently blocked by the CLI and no API key
-is sent to that storage origin. Use a trusted direct storage download workflow
-when available, and treat presigned URLs and diagnostic output as secrets.
+`assets download` uses the v2 endpoint, falling back to v1 only when the gateway
+returns HTTP 404 before a redirect. It follows public or presigned cross-origin
+storage redirects only over HTTPS, without forwarding request headers or the API
+key. HTTPS-to-HTTP downgrades and more than five redirects are rejected. Treat
+presigned URLs as secrets.
 
 Base URL resolution differs by command. `login` uses its `--base-url` flag,
 then `TIER0_BASE_URL`, the saved base URL, and finally `https://tier0.dev`.

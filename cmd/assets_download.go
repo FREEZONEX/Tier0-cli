@@ -7,13 +7,51 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
-	apiclient "github.com/FREEZONEX/Tier0-cli/internal/client"
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
 	"github.com/FREEZONEX/Tier0-cli/internal/config"
 	"github.com/spf13/cobra"
 )
+
+var (
+	errDownloadRedirectLimit   = errors.New("too many download redirects")
+	errDownloadRedirectInvalid = errors.New("invalid download redirect")
+	errDownloadDowngrade       = errors.New("refusing HTTPS downgrade in download redirect")
+	errDownloadInsecureOrigin  = errors.New("refusing insecure cross-origin download redirect")
+)
+
+// downloadRedirect is separate from the API policy: storage URLs can have a
+// different HTTPS origin, but must never receive credentials or a Referer.
+func downloadRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) > 5 {
+		return errDownloadRedirectLimit
+	}
+	if len(via) == 0 || req.URL.User != nil || (req.URL.Scheme != "https" && req.URL.Scheme != "http") {
+		return errDownloadRedirectInvalid
+	}
+	previous := via[len(via)-1].URL
+	if strings.EqualFold(previous.Scheme, "https") && !strings.EqualFold(req.URL.Scheme, "https") {
+		return errDownloadDowngrade
+	}
+	origin := func(u *url.URL) string { return u.Scheme + "://" + u.Host }
+	crossed := !config.SameOrigin(origin(via[0].URL), origin(req.URL))
+	for _, prior := range via[1:] {
+		if !config.SameOrigin(origin(via[0].URL), origin(prior.URL)) {
+			crossed = true
+		}
+	}
+	if crossed {
+		if !strings.EqualFold(req.URL.Scheme, "https") {
+			return errDownloadInsecureOrigin
+		}
+		// Go can copy initial headers again at every hop; clear all of them,
+		// including Referer, rather than maintaining a list of sensitive names.
+		req.Header = make(http.Header)
+	}
+	return nil
+}
 
 var assetsDownloadCmd = &cobra.Command{
 	Use:   "download",
@@ -48,32 +86,44 @@ func runAssetsDownload(cmd *cobra.Command, args []string) error {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("API Key not found"), jsonMode)
 	}
 
-	u := fmt.Sprintf("%s/openapi/v1/assets/files/download?filePath=%s", profile.BaseURL, url.QueryEscape(filePath))
+	query := "?filePath=" + url.QueryEscape(filePath)
 	if contentDisposition != "" {
-		u += "&responseContentDisposition=" + url.QueryEscape(contentDisposition)
+		query += "&responseContentDisposition=" + url.QueryEscape(contentDisposition)
 	}
-
-	req, err := http.NewRequestWithContext(cmd.Context(), http.MethodGet, u, nil)
-	if err != nil {
-		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
-	}
-	req.Header.Set("x-api-key", profile.APIKey)
-
-	if debug {
-		fmt.Fprintf(os.Stderr, "[debug] GET %s\n", u)
-	}
-	client := &http.Client{Timeout: 60 * time.Second, CheckRedirect: apiclient.CheckCredentialRedirect}
-	resp, err := client.Do(req)
-	if err != nil {
-		if errors.Is(err, apiclient.ErrCredentialRedirect) {
-			err = apiclient.ErrCredentialRedirect
+	redirected := false
+	client := &http.Client{Timeout: 60 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		redirected = true
+		return downloadRedirect(req, via)
+	}}
+	get := func(version string) (*http.Response, error) {
+		u := strings.TrimRight(profile.BaseURL, "/") + "/openapi/" + version + "/assets/files/download" + query
+		req, err := http.NewRequestWithContext(cmd.Context(), http.MethodGet, u, nil)
+		if err != nil {
+			return nil, err
 		}
-		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("download: %w", err), jsonMode)
+		req.Header.Set("x-api-key", profile.APIKey)
+		if debug {
+			fmt.Fprintf(os.Stderr, "[debug] GET %s\n", u)
+		}
+		return client.Do(req)
+	}
+	resp, err := get("v2")
+	if err == nil && !redirected && resp.StatusCode == http.StatusNotFound {
+		resp.Body.Close()
+		resp, err = get("v1")
+	}
+	if err != nil {
+		// net/http errors can contain a complete presigned Location URL.
+		for _, safe := range []error{errDownloadRedirectLimit, errDownloadRedirectInvalid, errDownloadDowngrade, errDownloadInsecureOrigin} {
+			if errors.Is(err, safe) {
+				return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("download: %w", safe), jsonMode)
+			}
+		}
+		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("download request failed (network or redirect error)"), jsonMode)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("download failed: status=%d body=%s", resp.StatusCode, string(body)), jsonMode)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("download failed: status=%d", resp.StatusCode), jsonMode)
 	}
 
 	var out io.Writer = cmd.OutOrStdout()
