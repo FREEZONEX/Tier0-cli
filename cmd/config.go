@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
@@ -69,6 +70,14 @@ func runConfig(cmd *cobra.Command, args []string) error {
 			if profile.APIKey == "" {
 				return invalidArgument(cmd, "--api-key", "API key must not be blank")
 			}
+			if profile.BaseURL == "" {
+				// Bind a newly supplied key, never an existing unbound key. An
+				// environment override is ambiguous: ask for an explicit origin.
+				if strings.TrimSpace(os.Getenv("TIER0_BASE_URL")) != "" {
+					return invalidArgument(cmd, "--base-url", "specify the target base URL when configuring a key with TIER0_BASE_URL set")
+				}
+				profile.BaseURL = "https://tier0.dev"
+			}
 		}
 		if setLang != "" {
 			profile.Lang = "en"
@@ -87,6 +96,9 @@ func runConfig(cmd *cobra.Command, args []string) error {
 		}
 		if setAPIKey != "" {
 			fmt.Fprintf(stdout, "✓ API Key set (%s...)\n", profile.APIKey[:min(8, len(profile.APIKey))])
+			if setBaseURL == "" {
+				fmt.Fprintf(stdout, "  Bound to BaseURL: %s\n", profile.BaseURL)
+			}
 		}
 		if setLang != "" {
 			fmt.Fprintln(stdout, "✓ Language set to: en")

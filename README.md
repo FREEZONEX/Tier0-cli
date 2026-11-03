@@ -67,6 +67,10 @@ Direct API key configuration:
 tier0 config --api-key sk-per-xxxxxx
 ```
 
+With no saved base URL, explicitly setting a key binds it to the default
+`https://tier0.dev`. If `TIER0_BASE_URL` is set, provide `--base-url` explicitly
+with the key to select its origin. An already saved base URL takes precedence.
+
 The browser login issues a Personal Key. An already issued Personal, Service,
 or App Key can be configured explicitly; the server determines its identity
 and effective permissions. `tier0 auth whoami` and `tier0 doctor` use the v2
@@ -262,7 +266,7 @@ go test ./...
 Skill example validation scans the sibling `Tier0-skill/` repository, extracts `tier0 ...` examples, and validates command paths and flags against the Cobra command tree.
 
 ```bash
-go test ./cmd -run TestSkillExamples
+go test ./cmd -run '^TestSkillExampleCommands$'
 ```
 
 Refresh the compiled baseline from the latest `Tier0-skill/main` commit:
