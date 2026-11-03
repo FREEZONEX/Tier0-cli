@@ -169,12 +169,21 @@ Automation should branch on these fields rather than matching message text.
 Configuration is stored at `~/.tier0/config.json`. MQTT credentials saved with
 `mqtt auth create --save` use individual user-only files under `~/.tier0/mqtt/`.
 
-Priority:
+OpenAPI commands, `auth whoami`, and `assets download` use the API key and base
+URL saved in the configuration file. `TIER0_API_KEY` is not supported: setting
+it does not override the saved key or authenticate a request. Configure a key
+with `tier0 login` or `tier0 config --api-key` instead.
+Treat command arguments, shell history, and logs as potentially visible when
+passing a key directly. The existing completed `login --json` response includes
+the issued Personal Key and must be handled as secret output.
 
-1. Command flags such as `--base-url`
-2. Environment variables such as `TIER0_BASE_URL`
-3. Config file
-4. Default `https://tier0.dev`
+Base URL resolution differs by command. `login` uses its `--base-url` flag,
+then `TIER0_BASE_URL`, the saved base URL, and finally `https://tier0.dev`.
+`doctor` and dry-run previews also resolve `TIER0_BASE_URL` before the saved
+URL, while actual OpenAPI requests use the saved URL. In particular, `doctor`
+sends the saved API key to its resolved base URL. Verify that any
+`TIER0_BASE_URL` points to the intended instance before running it, and do not
+use a dry-run URL as evidence of an actual request target when they differ.
 
 Tier0 CLI output is English-only. The legacy `--lang en` flag is accepted for compatibility.
 
@@ -182,8 +191,7 @@ Tier0 CLI output is English-only. The legacy `--lang en` flag is accepted for co
 
 | Variable | Meaning |
 | --- | --- |
-| `TIER0_BASE_URL` | Override platform base URL |
-| `TIER0_API_KEY` | Override API key |
+| `TIER0_BASE_URL` | Override the base URL for login, doctor, dry-run previews, and MQTT profile selection; not for ordinary OpenAPI requests |
 | `TIER0_MQTT_BROKER` | MQTT broker used without a saved credential profile |
 | `TIER0_MQTT_CLIENT_ID` | MQTT client ID used without a saved credential profile |
 | `TIER0_MQTT_USERNAME` | MQTT username used without a saved credential profile |
