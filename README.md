@@ -164,6 +164,10 @@ With `--json`, command validation failures are written to stderr with stable
 
 Automation should branch on these fields rather than matching message text.
 
+## Browsing Cloud and Enterprise namespaces
+
+`uns browse` first uses the Enterprise v1 browse contract. If that endpoint returns HTTP 404, it queries the Cloud v2 namespace endpoint. Cloud returns its native paginated `data.results` response, rather than Enterprise's `data.tree`; its IDs, kinds, and metadata have Cloud semantics. Cloud paths identify directories by exact name, and the result lists their children. `--cloud` selects v2 directly; `--page` and `--size` require `--cloud` (size 1–200). Cloud does not support the v1 `--max-depth` values other than 1, `--include-metadata`, or `--include-leaf-value` through this command; requests using them fail explicitly. Cloud App Keys can be denied by the server's namespace policy. Other UNS commands may still target v1 and require a compatible server.
+
 ## Flow Types
 
 | Type | Meaning |
