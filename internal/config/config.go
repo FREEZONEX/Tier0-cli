@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 // Profile holds all persistent CLI settings.
@@ -32,33 +33,68 @@ func configFile() string {
 // SaveProfile persists the profile to disk, merging non-zero fields
 // with the existing configuration to avoid overwriting unrelated settings.
 func SaveProfile(profile Profile) error {
-	dir := configDir()
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create config dir: %w", err)
-	}
+	return withProfileLock(func() error {
+		existing, err := LoadProfile()
+		if err != nil {
+			return err
+		}
+		if profile.BaseURL != "" {
+			existing.BaseURL = profile.BaseURL
+		}
+		if profile.APIKey != "" {
+			existing.APIKey = profile.APIKey
+		}
+		if profile.Lang != "" {
+			existing.Lang = profile.Lang
+		}
+		return writeProfile(existing)
+	})
+}
 
-	existing, _ := LoadProfile()
-	if profile.BaseURL != "" {
-		existing.BaseURL = profile.BaseURL
-	}
-	if profile.APIKey != "" {
-		existing.APIKey = profile.APIKey
-	}
-	// Lang is updated even when set to empty string (allows reset).
-	// Use the sentinel value "-" is not needed; callers set Lang explicitly.
-	if profile.Lang != "" {
-		existing.Lang = profile.Lang
-	}
-
-	data, err := json.MarshalIndent(existing, "", "  ")
+func writeProfile(profile Profile) error {
+	data, err := json.MarshalIndent(profile, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
-
-	if err := os.WriteFile(configFile(), data, 0600); err != nil {
+	if err := writeProfileAtomically(configFile(), data); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 	return nil
+}
+
+// writeProfileAtomically prevents a failed or interrupted write from truncating
+// the previous profile. The temporary file is created on the same filesystem.
+func writeProfileAtomically(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	f, err := os.CreateTemp(dir, ".config-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if _, err = f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err = f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err = f.Close(); err != nil {
+		return err
+	}
+	if err = os.Rename(f.Name(), path); err != nil {
+		return err
+	}
+	// Directory handles cannot be synced portably on Windows.
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
 }
 
 // LoadProfile reads the profile from disk.
