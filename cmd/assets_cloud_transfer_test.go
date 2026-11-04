@@ -113,3 +113,84 @@ func TestCloudDownloadNotFoundDoesNotFallback(t *testing.T) {
 		t.Fatalf("err=%v calls=%d", err, calls)
 	}
 }
+
+func TestCloudFileMutationDoesNotReplayRedirect(t *testing.T) {
+	for _, status := range []int{http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
+		for _, operation := range []string{"upload", "delete"} {
+			t.Run(fmt.Sprintf("%s-%d", operation, status), func(t *testing.T) {
+				t.Setenv("HOME", t.TempDir())
+				first, target := 0, 0
+				gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.URL.Path == "/redirect-target" {
+						target++
+						w.WriteHeader(http.StatusOK)
+						return
+					}
+					first++
+					w.Header().Set("Location", "/redirect-target")
+					w.WriteHeader(status)
+				}))
+				defer gateway.Close()
+				if err := config.SaveProfile(config.Profile{BaseURL: gateway.URL, APIKey: "synthetic"}); err != nil {
+					t.Fatal(err)
+				}
+				var args []string
+				if operation == "upload" {
+					p := filepath.Join(t.TempDir(), "file.txt")
+					if err := os.WriteFile(p, []byte("content"), 0600); err != nil {
+						t.Fatal(err)
+					}
+					args = []string{"assets", "upload", p, "--cloud", "--json"}
+				} else {
+					args = []string{"assets", "delete", "--cloud", "--file-path", "test", "--yes", "--json"}
+				}
+				_, stderr, err := executeRootForTest(args...)
+				if err == nil || first != 1 || target != 0 || !strings.Contains(stderr, `"execution":"unknown"`) || strings.Contains(stderr, `"retryable":true`) || !strings.Contains(stderr, fmt.Sprintf(`"http_status":%d`, status)) {
+					t.Fatalf("err=%v first=%d target=%d stderr=%s", err, first, target, stderr)
+				}
+			})
+		}
+	}
+}
+
+func TestCloudUploadRefusesHTTPSDowngrade(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	storageCalls := 0
+	storage := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { storageCalls++ }))
+	defer storage.Close()
+	gateway := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `{"code":200,"data":{"filePath":"owned","postUrl":%q,"postFields":{"signature":"private-synthetic"}}}`, storage.URL)
+	}))
+	defer gateway.Close()
+	trustDownloadServers(t, gateway)
+	if err := config.SaveProfile(config.Profile{BaseURL: gateway.URL, APIKey: "synthetic"}); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(t.TempDir(), "file.txt")
+	if err := os.WriteFile(p, []byte("content"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, stderr, err := executeRootForTest("assets", "upload", p, "--cloud", "--json")
+	if err == nil || storageCalls != 0 || !strings.Contains(stderr, "downgrade refused") || !strings.Contains(stderr, `"execution":"unknown"`) || strings.Contains(stderr, `"retryable":true`) || strings.Contains(stderr, "private-synthetic") {
+		t.Fatalf("err=%v calls=%d stderr=%s", err, storageCalls, stderr)
+	}
+}
+
+func TestFileUploadTransportDevelopmentPolicy(t *testing.T) {
+	for _, tc := range []struct {
+		api, storage string
+		allowed      bool
+	}{
+		{"https://api.test", "https://storage.test/upload", true},
+		{"https://api.test", "http://storage.test/upload", false},
+		{"http://127.0.0.1:18795", "http://127.0.0.1:19121/upload", true},
+		{"http://127.0.0.1:18795", "https://storage.test/upload", true},
+		{"https://api.test", "//storage.test/upload", false},
+		{"https://api.test", "https://user:secret@storage.test/", false},
+	} {
+		err := validateFileUploadTransport(tc.api, tc.storage)
+		if (err == nil) != tc.allowed {
+			t.Errorf("api=%q storage=%q: %v", tc.api, tc.storage, err)
+		}
+	}
+}

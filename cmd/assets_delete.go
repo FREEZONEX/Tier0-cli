@@ -59,7 +59,16 @@ func runAssetsDelete(cmd *cobra.Command, args []string) error {
 	}
 	bodyJSON, _ := json.Marshal(body)
 
-	resp, err := cmdutil.DoAPI(cmd.Context(), endpoint, "POST", string(bodyJSON), debug)
+	apiClient, err := cmdutil.NewConfiguredClient()
+	if err != nil {
+		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
+	}
+	var resp string
+	if cloud {
+		resp, err = apiClient.DoAPIWithoutRedirect(cmd.Context(), endpoint, "POST", string(bodyJSON), debug)
+	} else {
+		resp, err = apiClient.DoAPI(cmd.Context(), endpoint, "POST", string(bodyJSON), debug)
+	}
 	if err != nil {
 		if cloud {
 			return fileMutationUnknown(cmd, "delete", err)

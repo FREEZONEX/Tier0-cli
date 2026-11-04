@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -44,7 +45,7 @@ Examples:
 }
 
 func init() {
-	assetsUploadCmd.Flags().Bool("cloud", false, "Use Cloud v2 file endpoints")
+	assetsUploadCmd.Flags().Bool("cloud", false, "Use Cloud v2 file endpoints (HTTP storage allowed only with an HTTP API origin)")
 	assetsUploadCmd.Flags().String("business", "attachment", "Business scene")
 	assetsUploadCmd.Flags().String("use-by", "workspace", "Usage scope: user|workspace|platform")
 	assetsUploadCmd.Flags().String("visibility", "private", "Visibility: public|private")
@@ -161,7 +162,16 @@ func runAssetsUpload(cmd *cobra.Command, args []string) error {
 	if cloud {
 		endpoint = "/openapi/v2/assets/files"
 	}
-	resp, err := cmdutil.DoAPI(cmd.Context(), endpoint, "POST", string(bodyJSON), debug)
+	apiClient, err := cmdutil.NewConfiguredClient()
+	if err != nil {
+		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
+	}
+	var resp string
+	if cloud {
+		resp, err = apiClient.DoAPIWithoutRedirect(cmd.Context(), endpoint, "POST", string(bodyJSON), debug)
+	} else {
+		resp, err = apiClient.DoAPI(cmd.Context(), endpoint, "POST", string(bodyJSON), debug)
+	}
 	if err != nil {
 		if cloud {
 			return fileMutationUnknown(cmd, "upload request", err)
@@ -190,6 +200,13 @@ func runAssetsUpload(cmd *cobra.Command, args []string) error {
 			return fileMutationUnknown(cmd, "upload request", nil)
 		}
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("invalid upload response: missing postUrl or filePath"), jsonMode)
+	}
+
+	if err := validateFileUploadTransport(apiClient.BaseURL(), uploadResp.Data.PostURL); err != nil {
+		if cloud {
+			return fileMutationUnknown(cmd, "upload request: "+err.Error(), nil)
+		}
+		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
 	}
 
 	if err := postFileToURL(cmd.Context(), uploadResp.Data.PostURL, uploadResp.Data.PostFields, localPath, contentType, debug); err != nil {
@@ -305,4 +322,21 @@ func mimeTypeByExtension(ext string) string {
 	default:
 		return "application/octet-stream"
 	}
+}
+
+// HTTP storage is permitted only when the configured API itself uses HTTP,
+// for isolated development deployments. Signed fields never downgrade HTTPS.
+func validateFileUploadTransport(baseURL, postURL string) error {
+	base, err := url.Parse(baseURL)
+	if err != nil || base.Host == "" || (base.Scheme != "http" && base.Scheme != "https") {
+		return fmt.Errorf("invalid API origin for file upload")
+	}
+	target, err := url.Parse(postURL)
+	if err != nil || target.Host == "" || target.User != nil || (target.Scheme != "http" && target.Scheme != "https") {
+		return fmt.Errorf("invalid object storage upload URL")
+	}
+	if base.Scheme == "https" && target.Scheme != "https" {
+		return fmt.Errorf("HTTPS to HTTP object upload downgrade refused")
+	}
+	return nil
 }
