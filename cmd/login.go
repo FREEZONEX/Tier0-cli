@@ -60,6 +60,9 @@ func runLogin(cmd *cobra.Command, args []string) error {
 				"setup_code: %s\n",
 				setupCode)
 			fmt.Fprintf(stdout, "Polling with: tier0 login --setup-code %s", setupCode)
+			if baseURLArg != "" {
+				fmt.Fprintf(stdout, " --base-url %s", loginHintArg(baseURLArg))
+			}
 			if noKeyOutput {
 				fmt.Fprint(stdout, " --no-key-output")
 			}
@@ -103,17 +106,7 @@ func loginPoll(cmd *cobra.Command, baseURL, setupCode string, jsonMode, noKeyOut
 		return cmdutil.HandleCommandError(stderr, err, jsonMode)
 	}
 	if strings.TrimSpace(result.APIKey) == "" {
-		// A completed response without a credential must never leave a previous
-		// identity looking like the result of this login.
-		previous, loadErr := config.LoadProfile()
-		if loadErr != nil {
-			return configCommandError(cmd, "login returned no API key and the existing profile could not be cleared", loadErr)
-		}
-		previous.APIKey = ""
-		if saveErr := config.ReplaceProfile(previous); saveErr != nil {
-			return configCommandError(cmd, "login returned no API key and the existing profile could not be cleared", saveErr)
-		}
-		return cmdutil.HandleCommandError(stderr, errs.New(errs.CategoryAPI, 0, "login completed without an API key; saved credential was cleared"), jsonMode)
+		return cmdutil.HandleCommandError(stderr, errs.New(errs.CategoryAPI, 0, "login completed without an API key; existing profile was not changed"), jsonMode)
 	}
 
 	profile := config.Profile{
@@ -140,4 +133,13 @@ func loginPoll(cmd *cobra.Command, baseURL, setupCode string, jsonMode, noKeyOut
 		)
 	}
 	return nil
+}
+
+// loginHintArg leaves ordinary URLs portable across shells and quotes other
+// values for a POSIX shell so a copied command cannot execute URL characters.
+func loginHintArg(s string) string {
+	if strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~:/") == "" {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }

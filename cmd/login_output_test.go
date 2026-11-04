@@ -5,6 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -63,11 +67,11 @@ func TestLoginOutputAndSavedCredential(t *testing.T) {
 	}
 }
 
-func TestLoginCompletedWithoutKeyClearsOldIdentity(t *testing.T) {
-	for _, oldProfile := range []bool{false, true} {
+func TestLoginCompletedWithoutKeyPreservesProfile(t *testing.T) {
+	for _, origin := range []string{"none", "same", "different"} {
 		for _, key := range []string{"", "   "} {
 			for _, mode := range []string{"text", "json", "safe-json"} {
-				t.Run(fmt.Sprintf("old=%t/blank=%t/%s", oldProfile, key != "", mode), func(t *testing.T) {
+				t.Run(fmt.Sprintf("origin=%s/blank=%t/%s", origin, key != "", mode), func(t *testing.T) {
 					t.Setenv("HOME", t.TempDir())
 					server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 						_ = json.NewEncoder(w).Encode(map[string]any{
@@ -75,10 +79,17 @@ func TestLoginCompletedWithoutKeyClearsOldIdentity(t *testing.T) {
 						})
 					}))
 					defer server.Close()
-					if oldProfile {
-						if err := config.ReplaceProfile(config.Profile{BaseURL: server.URL, APIKey: "old-fixture-key", Lang: "zh"}); err != nil {
+					profilePath := filepath.Join(os.Getenv("HOME"), ".tier0", "config.json")
+					var before []byte
+					if origin != "none" {
+						oldURL := server.URL
+						if origin == "different" {
+							oldURL = "https://other.example"
+						}
+						if err := config.ReplaceProfile(config.Profile{BaseURL: oldURL, APIKey: "old-fixture-key", Lang: "zh"}); err != nil {
 							t.Fatal(err)
 						}
+						before, _ = os.ReadFile(profilePath)
 					}
 					args := []string{"login", "--base-url", server.URL, "--setup-code", "TESTCODE"}
 					if mode != "text" {
@@ -91,12 +102,13 @@ func TestLoginCompletedWithoutKeyClearsOldIdentity(t *testing.T) {
 					if err == nil || strings.Contains(out, "authorization_complete") {
 						t.Fatal("missing key was reported as successful login")
 					}
-					profile, err := config.LoadProfile()
-					if err != nil || profile.APIKey != "" {
-						t.Fatal("previous identity was retained")
-					}
-					if oldProfile && (profile.BaseURL != server.URL || profile.Lang != "zh") {
-						t.Fatal("clearing the key changed unrelated settings")
+					after, readErr := os.ReadFile(profilePath)
+					if origin == "none" {
+						if !os.IsNotExist(readErr) {
+							t.Fatal("unexpected profile created")
+						}
+					} else if readErr != nil || string(before) != string(after) {
+						t.Fatal("existing profile changed after invalid response")
 					}
 				})
 			}
@@ -124,10 +136,9 @@ func TestLoginNoWaitSafeHintSurvivesPolling(t *testing.T) {
 			next = strings.Fields(strings.TrimPrefix(line, hint))
 		}
 	}
-	if len(next) != 4 || next[0] != "login" || next[1] != "--setup-code" || next[3] != "--no-key-output" {
+	if len(next) != 6 || next[0] != "login" || next[1] != "--setup-code" || next[3] != "--base-url" || next[4] != server.URL || next[5] != "--no-key-output" {
 		t.Fatal("polling hint did not retain safe output option")
 	}
-	next = append(next, "--base-url", server.URL)
 	second, stderr, err := executeRootForTest(next...)
 	if err != nil || strings.Contains(second, testKey[:8]) || strings.Contains(stderr, testKey[:8]) {
 		t.Fatal("polling failed or exposed the credential")
@@ -135,5 +146,28 @@ func TestLoginNoWaitSafeHintSurvivesPolling(t *testing.T) {
 	profile, err := config.LoadProfile()
 	if err != nil || profile.APIKey != testKey {
 		t.Fatal("polling did not save the credential")
+	}
+}
+
+func TestLoginHintArgQuotesShellMetacharacters(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell quoting")
+	}
+	marker := filepath.Join(t.TempDir(), "must-not-exist")
+	value := "https://example.test/$(touch " + marker + ")/'suffix"
+	output, err := exec.Command("sh", "-c", "printf '%s' "+loginHintArg(value)).Output()
+	if err != nil || string(output) != value {
+		t.Fatal("hint argument was not preserved by the shell")
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("hint argument executed shell syntax")
+	}
+}
+
+func TestLoginNoWaitHintIncludesBaseURLWithoutSafeFlag(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	out, _, err := executeRootForTest("login", "--base-url", "https://other.example/api", "--no-wait")
+	if err != nil || !strings.Contains(out, " --base-url https://other.example/api\n") {
+		t.Fatal("polling hint lost explicit base URL")
 	}
 }
