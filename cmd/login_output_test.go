@@ -6,9 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -149,18 +147,33 @@ func TestLoginNoWaitSafeHintSurvivesPolling(t *testing.T) {
 	}
 }
 
-func TestLoginHintArgQuotesShellMetacharacters(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX shell quoting")
+func TestLoginHintArgPortableAcrossShells(t *testing.T) {
+	for _, tc := range []struct {
+		input, output string
+		portable      bool
+	}{
+		{"https://example.test:8443/api", "https://example.test:8443/api", true},
+		{"http://[::1]:8795", `"http://[::1]:8795"`, true},
+		{"http://[fe80::1%25eth0]:8795", "", false},
+		{"https://example.test/$(touch marker)", "", false},
+		{"https://example.test/%PATH%", "", false},
+	} {
+		out, ok := loginHintArg(tc.input)
+		if ok != tc.portable || out != tc.output {
+			t.Errorf("unexpected portable hint for %q", tc.input)
+		}
 	}
-	marker := filepath.Join(t.TempDir(), "must-not-exist")
-	value := "https://example.test/$(touch " + marker + ")/'suffix"
-	output, err := exec.Command("sh", "-c", "printf '%s' "+loginHintArg(value)).Output()
-	if err != nil || string(output) != value {
-		t.Fatal("hint argument was not preserved by the shell")
+}
+
+func TestLoginNoWaitHintIPv6AndNonportableURL(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	ipv6, _, err := executeRootForTest("login", "--base-url", "http://[::1]:8795", "--no-wait", "--no-key-output")
+	if err != nil || !strings.Contains(ipv6, ` --base-url "http://[::1]:8795" --no-key-output`+"\n") {
+		t.Fatal("IPv6 hint was not double-quoted for POSIX and Windows cmd")
 	}
-	if _, err := os.Stat(marker); !os.IsNotExist(err) {
-		t.Fatal("hint argument executed shell syntax")
+	unsafe, _, err := executeRootForTest("login", "--base-url", "https://example.test/%PATH%", "--no-wait", "--no-key-output")
+	if err != nil || strings.Contains(unsafe, "Polling with: tier0") || !strings.Contains(unsafe, "No portable polling command") || !strings.Contains(unsafe, "Include --no-key-output") {
+		t.Fatal("nonportable URL did not produce safe manual instructions")
 	}
 }
 

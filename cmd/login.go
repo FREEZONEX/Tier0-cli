@@ -59,14 +59,22 @@ func runLogin(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(stdout,
 				"setup_code: %s\n",
 				setupCode)
-			fmt.Fprintf(stdout, "Polling with: tier0 login --setup-code %s", setupCode)
-			if baseURLArg != "" {
-				fmt.Fprintf(stdout, " --base-url %s", loginHintArg(baseURLArg))
+			arg, portable := loginHintArg(baseURLArg)
+			if baseURLArg != "" && !portable {
+				fmt.Fprintln(stdout, "No portable polling command can be displayed for this base URL; run tier0 login with the setup code above and specify the same --base-url using your shell's quoting rules.")
+				if noKeyOutput {
+					fmt.Fprintln(stdout, "Include --no-key-output when polling.")
+				}
+			} else {
+				fmt.Fprintf(stdout, "Polling with: tier0 login --setup-code %s", setupCode)
+				if baseURLArg != "" {
+					fmt.Fprintf(stdout, " --base-url %s", arg)
+				}
+				if noKeyOutput {
+					fmt.Fprint(stdout, " --no-key-output")
+				}
+				fmt.Fprintln(stdout)
 			}
-			if noKeyOutput {
-				fmt.Fprint(stdout, " --no-key-output")
-			}
-			fmt.Fprintln(stdout)
 		}
 		return nil
 	}
@@ -135,11 +143,14 @@ func loginPoll(cmd *cobra.Command, baseURL, setupCode string, jsonMode, noKeyOut
 	return nil
 }
 
-// loginHintArg leaves ordinary URLs portable across shells and quotes other
-// values for a POSIX shell so a copied command cannot execute URL characters.
-func loginHintArg(s string) string {
+// loginHintArg only formats values that are safe in both POSIX shells and
+// Windows cmd.exe. More complicated values need shell-specific instructions.
+func loginHintArg(s string) (string, bool) {
 	if strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~:/") == "" {
-		return s
+		return s, true
 	}
-	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+	if strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~:/[]") == "" {
+		return `"` + s + `"`, true
+	}
+	return "", false
 }
