@@ -22,6 +22,7 @@ var unsBrowseCmd = &cobra.Command{
 func init() {
 	unsBrowseCmd.Flags().Bool("cloud", false, "Use Cloud v2 namespace query and return its native paginated response")
 	unsBrowseCmd.Flags().Int("page", 1, "Cloud page number (requires --cloud)")
+	unsBrowseCmd.Flags().Int("path-max-pages", 1000, "Maximum pages per Cloud path segment (requires --cloud; 1-10000)")
 	unsBrowseCmd.Flags().Int("size", 100, "Cloud page size, 1-200 (requires --cloud)")
 	unsBrowseCmd.Flags().StringP("path", "p", "/",
 		"Path to browse in the UNS tree")
@@ -57,11 +58,12 @@ func runUnsBrowse(cmd *cobra.Command, args []string) error {
 	cloud, _ := cmd.Flags().GetBool("cloud")
 	page, _ := cmd.Flags().GetInt("page")
 	size, _ := cmd.Flags().GetInt("size")
-	if (cmd.Flags().Changed("page") || cmd.Flags().Changed("size")) && !cloud {
-		return invalidArgument(cmd, "--page/--size", "requires --cloud")
+	maxPages, _ := cmd.Flags().GetInt("path-max-pages")
+	if (cmd.Flags().Changed("page") || cmd.Flags().Changed("size") || cmd.Flags().Changed("path-max-pages")) && !cloud {
+		return invalidArgument(cmd, "--page/--size/--path-max-pages", "requires --cloud")
 	}
-	if page < 1 || size < 1 || size > 200 {
-		return invalidArgument(cmd, "--page/--size", "page must be positive and size must be between 1 and 200")
+	if page < 1 || size < 1 || size > 200 || maxPages < 1 || maxPages > 10000 {
+		return invalidArgument(cmd, "--page/--size/--path-max-pages", "page must be positive, size 1-200 and path-max-pages 1-10000")
 	}
 	c, err := cmdutil.NewConfiguredClient()
 	if err != nil {
@@ -90,7 +92,7 @@ func runUnsBrowse(cmd *cobra.Command, args []string) error {
 		if strings.TrimSpace(path) != path {
 			return invalidArgument(cmd, "--path", "Cloud path cannot have leading or trailing whitespace")
 		}
-		resp, err = cloudBrowse(cmd.Context(), c, path, page, size, debug)
+		resp, err = cloudBrowse(cmd.Context(), c, path, page, size, maxPages, debug)
 		if err != nil {
 			return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
 		}

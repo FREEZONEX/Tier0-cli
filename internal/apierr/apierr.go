@@ -15,6 +15,8 @@ import (
 type APIError struct {
 	// HTTPStatus is the HTTP status code (401, 403, 404 …).
 	HTTPStatus int
+	// BackendCode is the structured string code returned by Cloud error envelopes.
+	BackendCode string
 	// Code is the backend ResultVO code (may differ from HTTPStatus).
 	Code int `json:"code,omitempty"`
 	// Message is the human-readable error message from the backend.
@@ -95,10 +97,17 @@ func parseBackendMessage(rawBody string) (code int, msg string) {
 // automatically attaching an appropriate hint.
 func New(httpStatus int, rawBody string) *APIError {
 	code, msg := parseBackendMessage(rawBody)
+	var wire struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	_ = json.Unmarshal([]byte(rawBody), &wire)
 	e := &APIError{
-		HTTPStatus: httpStatus,
-		Code:       code,
-		Message:    msg,
+		BackendCode: wire.Error.Code,
+		HTTPStatus:  httpStatus,
+		Code:        code,
+		Message:     msg,
 	}
 	e.Hint, e.HintCommand = hintFor(httpStatus, msg)
 	return e

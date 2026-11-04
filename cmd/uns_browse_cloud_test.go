@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
 	"github.com/FREEZONEX/Tier0-cli/internal/config"
 )
 
@@ -305,7 +306,7 @@ func TestCloudPathDoesNotAssumeUniquenessOnIncompleteListing(t *testing.T) {
 			if err := config.SaveProfile(config.Profile{BaseURL: server.URL, APIKey: "synthetic"}); err != nil {
 				t.Fatal(err)
 			}
-			_, stderr, err := executeRootForTest("uns", "browse", "--cloud", "--path", "Plant", "--json")
+			_, stderr, err := executeRootForTest("uns", "browse", "--cloud", "--path", "Plant", "--path-max-pages", "100", "--json")
 			if err == nil {
 				t.Fatal("accepted an ambiguous or incomplete listing")
 			}
@@ -316,5 +317,156 @@ func TestCloudPathDoesNotAssumeUniquenessOnIncompleteListing(t *testing.T) {
 				t.Fatalf("limit calls=%d stderr=%q", calls, stderr)
 			}
 		})
+	}
+}
+
+func TestCloudBrowseShrinksAndRestartsPathSearch(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("TIER0_BASE_URL", "")
+	calls := []string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Queries []struct {
+				Parent string `json:"parentId"`
+				Search string `json:"search"`
+				Page   int    `json:"page"`
+				Size   int    `json:"size"`
+			} `json:"queries"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Queries) != 1 {
+			t.Errorf("bad query %v", err)
+			return
+		}
+		q := req.Queries[0]
+		calls = append(calls, fmt.Sprintf("%s/%d/%d", q.Parent, q.Page, q.Size))
+		if q.Parent == "" && q.Search != "Plant" {
+			t.Errorf("missing search %q", q.Search)
+		}
+		if q.Parent == "" && q.Page == 2 && q.Size == 200 {
+			w.WriteHeader(413)
+			fmt.Fprint(w, `{"code":413,"msg":"query exceeds 8 MiB","error":{"code":"RESPONSE_TOO_LARGE","execution":"rolledBack"}}`)
+			return
+		}
+		list := `[]`
+		more := false
+		if q.Parent == "" && q.Page == 1 {
+			list = `[{"id":"p","kind":"directory","data":{"name":"Plant"}}]`
+			more = true
+		}
+		if q.Parent == "p" {
+			list = `[{"id":"child","kind":"topic","data":{"name":"Temp"}}]`
+		}
+		fmt.Fprintf(w, `{"code":200,"data":{"results":[{"queryId":"browse","list":%s,"page":%d,"size":%d,"hasMore":%t}]}}`, list, q.Page, q.Size, more)
+	}))
+	defer server.Close()
+	if err := config.SaveProfile(config.Profile{BaseURL: server.URL, APIKey: "synthetic"}); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err := executeRootForTest("uns", "browse", "--cloud", "--path", "Plant", "--size", "1", "--json")
+	if err != nil || !strings.Contains(out, "child") || strings.Join(calls, ",") != "/1/200,/2/200,/1/100,/2/100,p/1/1" {
+		t.Fatalf("out=%q err=%v calls=%v", out, err, calls)
+	}
+}
+
+func TestCloudBrowseResponseTooLargeIsBoundedAndSpecific(t *testing.T) {
+	for _, code := range []string{"RESPONSE_TOO_LARGE", "REQUEST_TOO_LARGE"} {
+		t.Run(code, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("TIER0_BASE_URL", "")
+			calls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				w.WriteHeader(413)
+				fmt.Fprintf(w, `{"code":413,"msg":"too large","error":{"code":%q,"execution":"rolledBack"}}`, code)
+			}))
+			defer server.Close()
+			if err := config.SaveProfile(config.Profile{BaseURL: server.URL, APIKey: "synthetic"}); err != nil {
+				t.Fatal(err)
+			}
+			_, stderr, err := executeRootForTest("uns", "browse", "--cloud", "--path", "Plant", "--json")
+			want := 1
+			if code == "RESPONSE_TOO_LARGE" {
+				want = 8
+			}
+			if err == nil || calls != want {
+				t.Fatalf("code=%s calls=%d want=%d err=%v stderr=%s", code, calls, want, err, stderr)
+			}
+		})
+	}
+}
+
+func TestCloudBrowseErrorsAreClassifiedOnce(t *testing.T) {
+	for _, mode := range []string{"missing", "malformed", "invalid-path"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("TIER0_BASE_URL", "")
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if mode == "malformed" {
+					fmt.Fprint(w, `{}`)
+					return
+				}
+				fmt.Fprint(w, `{"code":200,"data":{"results":[{"queryId":"browse","list":[],"page":1,"size":200,"hasMore":false}]}}`)
+			}))
+			defer server.Close()
+			if err := config.SaveProfile(config.Profile{BaseURL: server.URL, APIKey: "synthetic"}); err != nil {
+				t.Fatal(err)
+			}
+			path := "missing"
+			if mode == "invalid-path" {
+				path = "."
+			}
+			_, stderr, err := executeRootForTest("uns", "browse", "--cloud", "--path", path, "--json")
+			if err == nil || !cmdutil.IsClassified(err) {
+				t.Fatalf("unclassified error %v", err)
+			}
+			var value map[string]any
+			if json.Unmarshal([]byte(strings.TrimSpace(stderr)), &value) != nil {
+				t.Fatalf("not one JSON envelope: %q", stderr)
+			}
+		})
+	}
+}
+
+func TestCloudPathCanScanMoreThanTwentyThousandMatches(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("TIER0_BASE_URL", "")
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var req struct {
+			Queries []struct {
+				Parent string `json:"parentId"`
+				Page   int    `json:"page"`
+				Size   int    `json:"size"`
+			} `json:"queries"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		q := req.Queries[0]
+		list := []any{}
+		more := false
+		if q.Parent == "" {
+			if q.Size != 200 {
+				t.Errorf("size=%d", q.Size)
+			}
+			for i := 0; i < 200; i++ {
+				name := fmt.Sprintf("Plant-%d-%d", q.Page, i)
+				if q.Page == 1 && i == 0 {
+					name = "Plant"
+				}
+				list = append(list, map[string]any{"id": fmt.Sprintf("id-%d-%d", q.Page, i), "kind": "directory", "data": map[string]string{"name": name}})
+			}
+			more = q.Page < 101
+		} else if q.Parent != "id-1-0" {
+			t.Errorf("wrong parent %q", q.Parent)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 200, "data": map[string]any{"results": []any{map[string]any{"queryId": "browse", "list": list, "page": q.Page, "size": q.Size, "hasMore": more}}}})
+	}))
+	defer server.Close()
+	if err := config.SaveProfile(config.Profile{BaseURL: server.URL, APIKey: "synthetic"}); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := executeRootForTest("uns", "browse", "--cloud", "--path", "Plant", "--size", "1", "--path-max-pages", "102", "--json")
+	if err != nil || calls != 102 {
+		t.Fatalf("err=%v calls=%d", err, calls)
 	}
 }
