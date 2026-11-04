@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -44,6 +45,7 @@ Examples:
 }
 
 func init() {
+	assetsUploadCmd.Flags().Bool("cloud", false, "Use Cloud v2 file endpoints (HTTP storage allowed only with an HTTP API origin)")
 	assetsUploadCmd.Flags().String("business", "attachment", "Business scene")
 	assetsUploadCmd.Flags().String("use-by", "workspace", "Usage scope: user|workspace|platform")
 	assetsUploadCmd.Flags().String("visibility", "private", "Visibility: public|private")
@@ -58,7 +60,7 @@ func init() {
 }
 
 type assetsUploadResponse struct {
-	Code int    `json:"code"`
+	Code *int   `json:"code"`
 	Msg  string `json:"msg"`
 	Data struct {
 		FileID     flexibleInt64     `json:"fileId"`
@@ -123,9 +125,13 @@ func runAssetsUpload(cmd *cobra.Command, args []string) error {
 
 	resume, _ := cmd.Flags().GetBool("resume")
 	abort, _ := cmd.Flags().GetBool("abort")
+	cloud, _ := cmd.Flags().GetBool("cloud")
 
 	// 大文件（>100MB）自动分片直传；存在断点状态或显式 --resume/--abort 也走 multipart 流程
 	if info.Size() > multipartThreshold || resume || abort || multipartStateExists(localPath) {
+		if cloud {
+			return invalidArgument(cmd, "--cloud", "Cloud multipart upload and resume are not supported by this command")
+		}
 		return runMultipartUpload(cmd, localPath, info, multipartOptions{
 			business:      business,
 			useBy:         useBy,
@@ -152,23 +158,61 @@ func runAssetsUpload(cmd *cobra.Command, args []string) error {
 	}
 	bodyJSON, _ := json.Marshal(body)
 
-	resp, err := cmdutil.DoAPI(cmd.Context(), "/openapi/v1/assets/files", "POST", string(bodyJSON), debug)
+	endpoint := "/openapi/v1/assets/files"
+	if cloud {
+		endpoint = "/openapi/v2/assets/files"
+	}
+	apiClient, err := cmdutil.NewConfiguredClient()
 	if err != nil {
+		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
+	}
+	var resp string
+	if cloud {
+		resp, err = apiClient.DoAPIWithoutRedirect(cmd.Context(), endpoint, "POST", string(bodyJSON), debug)
+	} else {
+		resp, err = apiClient.DoAPI(cmd.Context(), endpoint, "POST", string(bodyJSON), debug)
+	}
+	if err != nil {
+		if cloud {
+			return fileMutationUnknown(cmd, "upload request", err)
+		}
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
 	}
 
 	var uploadResp assetsUploadResponse
 	if err := json.Unmarshal([]byte(resp), &uploadResp); err != nil {
+		if cloud {
+			return fileMutationUnknown(cmd, "upload request", nil)
+		}
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("parse upload response: %w", err), jsonMode)
 	}
-	if uploadResp.Code != 0 && uploadResp.Code != 200 {
-		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), apierr.NewBusiness(uploadResp.Code, resp), jsonMode)
+	if cloud && uploadResp.Code == nil {
+		return fileMutationUnknown(cmd, "upload request", nil)
+	}
+	if uploadResp.Code != nil && *uploadResp.Code != 0 && *uploadResp.Code != 200 {
+		if cloud {
+			return fileMutationUnknown(cmd, "upload request", apierr.NewBusiness(*uploadResp.Code, resp))
+		}
+		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), apierr.NewBusiness(*uploadResp.Code, resp), jsonMode)
 	}
 	if uploadResp.Data.PostURL == "" || uploadResp.Data.FilePath == "" {
+		if cloud {
+			return fileMutationUnknown(cmd, "upload request", nil)
+		}
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("invalid upload response: missing postUrl or filePath"), jsonMode)
 	}
 
+	if err := validateFileUploadTransport(apiClient.BaseURL(), uploadResp.Data.PostURL); err != nil {
+		if cloud {
+			return fileMutationUnknown(cmd, "upload request: "+err.Error(), nil)
+		}
+		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
+	}
+
 	if err := postFileToURL(cmd.Context(), uploadResp.Data.PostURL, uploadResp.Data.PostFields, localPath, contentType, debug); err != nil {
+		if cloud {
+			return fileMutationUnknown(cmd, "object upload", nil)
+		}
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
 	}
 
@@ -237,19 +281,18 @@ func postFileToURL(ctx context.Context, postURL string, postFields map[string]st
 	req.ContentLength = int64(head.Len()) + info.Size() + int64(len(tail))
 
 	if debug {
-		fmt.Fprintf(os.Stderr, "[debug] POST %s (multipart body %d bytes)\n", postURL, req.ContentLength)
+		fmt.Fprintf(os.Stderr, "[debug] POST object storage (multipart body %d bytes)\n", req.ContentLength)
 	}
 	// 大文件流式上传不设置客户端总超时：固定超时会中断慢速但正常的大文件上传。
 	// 取消通过请求 context（cmd.Context()，响应 Ctrl-C）传递，与仓库其他 HTTP 调用一致。
-	client := &http.Client{}
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("post file: %w", err)
+		return fmt.Errorf("post file failed: network or redirect error")
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		bodyText, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("post file failed: status=%d body=%s", resp.StatusCode, string(bodyText))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("post file failed: status=%d", resp.StatusCode)
 	}
 	return nil
 }
@@ -279,4 +322,21 @@ func mimeTypeByExtension(ext string) string {
 	default:
 		return "application/octet-stream"
 	}
+}
+
+// HTTP storage is permitted only when the configured API itself uses HTTP,
+// for isolated development deployments. Signed fields never downgrade HTTPS.
+func validateFileUploadTransport(baseURL, postURL string) error {
+	base, err := url.Parse(baseURL)
+	if err != nil || base.Host == "" || (base.Scheme != "http" && base.Scheme != "https") {
+		return fmt.Errorf("invalid API origin for file upload")
+	}
+	target, err := url.Parse(postURL)
+	if err != nil || target.Host == "" || target.User != nil || (target.Scheme != "http" && target.Scheme != "https") {
+		return fmt.Errorf("invalid object storage upload URL")
+	}
+	if base.Scheme == "https" && target.Scheme != "https" {
+		return fmt.Errorf("HTTPS to HTTP object upload downgrade refused")
+	}
+	return nil
 }

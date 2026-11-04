@@ -52,6 +52,15 @@ func CheckCredentialRedirect(req *http.Request, via []*http.Request) error {
 
 // DoAPI calls an API endpoint.
 func (c *Client) DoAPI(ctx context.Context, endpoint, method, body string, debug bool) (string, error) {
+	return c.doAPI(ctx, endpoint, method, body, debug, false)
+}
+
+// DoAPIWithoutRedirect never replays a mutation at a redirect target.
+func (c *Client) DoAPIWithoutRedirect(ctx context.Context, endpoint, method, body string, debug bool) (string, error) {
+	return c.doAPI(ctx, endpoint, method, body, debug, true)
+}
+
+func (c *Client) doAPI(ctx context.Context, endpoint, method, body string, debug, noRedirect bool) (string, error) {
 	if strings.TrimSpace(method) == "" {
 		return "", errs.New(errs.CategoryInternal, 0, "request method is empty").
 			WithSubtype(errs.SubtypeFailedPrecondition)
@@ -91,7 +100,13 @@ func (c *Client) DoAPI(ctx context.Context, endpoint, method, body string, debug
 		fmt.Fprintf(os.Stderr, "[debug] ----------------------------------\n")
 	}
 
-	resp, err := c.client.Do(req)
+	httpClient := c.client
+	if noRedirect {
+		copy := *c.client
+		copy.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		httpClient = &copy
+	}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		if errors.Is(err, ErrCredentialRedirect) {
 			err = ErrCredentialRedirect
@@ -101,6 +116,9 @@ func (c *Client) DoAPI(ctx context.Context, endpoint, method, body string, debug
 			WithRetryable()
 	}
 	defer resp.Body.Close()
+	if noRedirect && resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return "", apierr.New(resp.StatusCode, "redirect refused for file mutation")
+	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -116,7 +134,7 @@ func (c *Client) DoAPI(ctx context.Context, endpoint, method, body string, debug
 		debugBody := redactDebugPayload(string(respBody))
 		// Credential creation responses can contain one-time passwords even if
 		// the response is truncated and cannot be parsed as JSON.
-		if strings.HasSuffix(endpoint, "/mqtt-auth/create") && !json.Valid(respBody) {
+		if (strings.HasSuffix(endpoint, "/mqtt-auth/create") || strings.Contains(endpoint, "/assets/files")) && !json.Valid(respBody) {
 			debugBody = "<debug body redacted>"
 		}
 		fmt.Fprintf(os.Stderr, "[debug] ---------- HTTP Response ---------\n")
@@ -171,6 +189,8 @@ func sensitiveDebugKey(key string) bool {
 	return strings.Contains(normalized, "password") ||
 		strings.Contains(normalized, "secret") ||
 		strings.Contains(normalized, "token") ||
+		strings.Contains(normalized, "signature") ||
+		normalized == "postfields" || normalized == "posturl" || normalized == "fileurl" ||
 		normalized == "apikey" || normalized == "authorization" || normalized == "privatekey"
 }
 
