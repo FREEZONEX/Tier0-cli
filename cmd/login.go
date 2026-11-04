@@ -3,10 +3,12 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/auth"
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
 	"github.com/FREEZONEX/Tier0-cli/internal/config"
+	"github.com/FREEZONEX/Tier0-cli/internal/errs"
 	"github.com/spf13/cobra"
 )
 
@@ -25,12 +27,15 @@ func init() {
 		"Poll for an existing setup code instead of creating a new one")
 	loginCmd.Flags().String("base-url", "",
 		"Override the platform base URL")
+	loginCmd.Flags().Bool("no-key-output", false,
+		"Save the issued key without printing it or its prefix")
 }
 
 func runLogin(cmd *cobra.Command, args []string) error {
 	noWait, _ := cmd.Flags().GetBool("no-wait")
 	setupCode, _ := cmd.Flags().GetString("setup-code")
 	jsonMode, _ := cmd.Flags().GetBool("json")
+	noKeyOutput, _ := cmd.Flags().GetBool("no-key-output")
 	baseURLArg, _ := cmd.Flags().GetString("base-url")
 	stdout := cmd.OutOrStdout()
 	stderr := cmd.ErrOrStderr()
@@ -38,7 +43,7 @@ func runLogin(cmd *cobra.Command, args []string) error {
 	baseURL := cmdutil.ResolveBaseURL(baseURLArg)
 
 	if setupCode != "" {
-		return loginPoll(cmd, baseURL, setupCode, jsonMode, stdout, stderr)
+		return loginPoll(cmd, baseURL, setupCode, jsonMode, noKeyOutput, stdout, stderr)
 	}
 
 	setupCode = auth.GenerateSetupCode()
@@ -54,9 +59,22 @@ func runLogin(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(stdout,
 				"setup_code: %s\n",
 				setupCode)
-			fmt.Fprintf(stdout,
-				"Polling automatically with: tier0 login --setup-code %s\n",
-				setupCode)
+			arg, portable := loginHintArg(baseURLArg)
+			if baseURLArg != "" && !portable {
+				fmt.Fprintln(stdout, "No portable polling command can be displayed for this base URL; run tier0 login with the setup code above and specify the same --base-url using your shell's quoting rules.")
+				if noKeyOutput {
+					fmt.Fprintln(stdout, "Include --no-key-output when polling.")
+				}
+			} else {
+				fmt.Fprintf(stdout, "Polling with: tier0 login --setup-code %s", setupCode)
+				if baseURLArg != "" {
+					fmt.Fprintf(stdout, " --base-url %s", arg)
+				}
+				if noKeyOutput {
+					fmt.Fprint(stdout, " --no-key-output")
+				}
+				fmt.Fprintln(stdout)
+			}
 		}
 		return nil
 	}
@@ -69,10 +87,10 @@ func runLogin(cmd *cobra.Command, args []string) error {
 		"\nWaiting for authorization... (polling every 5s, up to 10 minutes)",
 	)
 
-	return loginPoll(cmd, baseURL, setupCode, jsonMode, stdout, stderr)
+	return loginPoll(cmd, baseURL, setupCode, jsonMode, noKeyOutput, stdout, stderr)
 }
 
-func loginPoll(cmd *cobra.Command, baseURL, setupCode string, jsonMode bool, stdout, stderr io.Writer) error {
+func loginPoll(cmd *cobra.Command, baseURL, setupCode string, jsonMode, noKeyOutput bool, stdout, stderr io.Writer) error {
 	result, err := auth.PollSetupCheck(cmd.Context(), baseURL, setupCode, func(current, total int, done bool, pollErr error) {
 		if jsonMode || done {
 			return
@@ -95,6 +113,9 @@ func loginPoll(cmd *cobra.Command, baseURL, setupCode string, jsonMode bool, std
 	if err != nil {
 		return cmdutil.HandleCommandError(stderr, err, jsonMode)
 	}
+	if strings.TrimSpace(result.APIKey) == "" {
+		return cmdutil.HandleCommandError(stderr, errs.New(errs.CategoryAPI, 0, "login completed without an API key; existing profile was not changed"), jsonMode)
+	}
 
 	profile := config.Profile{
 		BaseURL: baseURL,
@@ -104,16 +125,32 @@ func loginPoll(cmd *cobra.Command, baseURL, setupCode string, jsonMode bool, std
 		return configCommandError(cmd, "failed to save config: "+err.Error(), err)
 	}
 
-	if jsonMode {
+	if jsonMode && noKeyOutput {
+		fmt.Fprintln(stdout, `{"event":"authorization_complete"}`)
+	} else if jsonMode {
 		fmt.Fprintf(stdout, `{"event":"authorization_complete","api_key":"%s"}`+"\n", result.APIKey)
 	} else {
 		fmt.Fprintln(stdout, "\n✓ Authorization successful!")
-		fmt.Fprintf(stdout,
-			"API Key: %s... (saved)\n",
-			result.APIKey[:8])
+		if noKeyOutput {
+			fmt.Fprintln(stdout, "API Key saved.")
+		} else {
+			fmt.Fprintf(stdout, "API Key: %s... (saved)\n", result.APIKey[:min(8, len(result.APIKey))])
+		}
 		fmt.Fprintln(stdout,
 			"✓ Setup complete. You can now use tier0 api commands.",
 		)
 	}
 	return nil
+}
+
+// loginHintArg only formats values that are safe in both POSIX shells and
+// Windows cmd.exe. More complicated values need shell-specific instructions.
+func loginHintArg(s string) (string, bool) {
+	if strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~:/") == "" {
+		return s, true
+	}
+	if strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~:/[]") == "" {
+		return `"` + s + `"`, true
+	}
+	return "", false
 }
