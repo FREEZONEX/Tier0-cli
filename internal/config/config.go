@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 // Profile holds all persistent CLI settings.
@@ -55,10 +56,45 @@ func SaveProfile(profile Profile) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	if err := os.WriteFile(configFile(), data, 0600); err != nil {
+	if err := writeProfileAtomically(configFile(), data); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 	return nil
+}
+
+// writeProfileAtomically prevents a failed or interrupted write from truncating
+// the previous profile. The temporary file is created on the same filesystem.
+func writeProfileAtomically(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	f, err := os.CreateTemp(dir, ".config-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if _, err = f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err = f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err = f.Close(); err != nil {
+		return err
+	}
+	if err = os.Rename(f.Name(), path); err != nil {
+		return err
+	}
+	// Directory handles cannot be synced portably on Windows.
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
 }
 
 // LoadProfile reads the profile from disk.
