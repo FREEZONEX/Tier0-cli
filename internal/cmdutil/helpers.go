@@ -35,6 +35,11 @@ func DoWhoami(ctx context.Context, debug bool) (string, error) {
 	return c.Whoami(ctx, debug)
 }
 
+// NewConfiguredClient snapshots the saved origin and key for a multi-request operation.
+func NewConfiguredClient() (*client.Client, error) {
+	return configuredClient()
+}
+
 func configuredClient() (*client.Client, error) {
 	profile, err := config.LoadProfile()
 	if err != nil {
