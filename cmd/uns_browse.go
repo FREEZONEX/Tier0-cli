@@ -63,10 +63,13 @@ func runUnsBrowse(cmd *cobra.Command, args []string) error {
 	if page < 1 || size < 1 || size > 200 {
 		return invalidArgument(cmd, "--page/--size", "page must be positive and size must be between 1 and 200")
 	}
+	c, err := cmdutil.NewConfiguredClient()
+	if err != nil {
+		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
+	}
 	var resp string
-	var err error
 	if !cloud {
-		resp, err = cmdutil.DoAPI(cmd.Context(), "/openapi/v1/uns/browse", "POST", cmdutil.JSONString(payload), debug)
+		resp, err = c.DoAPI(cmd.Context(), "/openapi/v1/uns/browse", "POST", cmdutil.JSONString(payload), debug)
 		if err == nil {
 			err = cmdutil.CheckResponse(resp)
 			if err != nil {
@@ -87,7 +90,7 @@ func runUnsBrowse(cmd *cobra.Command, args []string) error {
 		if strings.TrimSpace(path) != path {
 			return invalidArgument(cmd, "--path", "Cloud path cannot have leading or trailing whitespace")
 		}
-		resp, err = cloudBrowse(cmd.Context(), path, page, size, debug)
+		resp, err = cloudBrowse(cmd.Context(), c, path, page, size, debug)
 		if err != nil {
 			return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
 		}

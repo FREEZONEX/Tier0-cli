@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/FREEZONEX/Tier0-cli/internal/client"
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
 )
 
@@ -30,19 +31,19 @@ type cloudNamespace struct {
 	} `json:"data"`
 }
 
-func cloudBrowse(ctx context.Context, path string, page, size int, debug bool) (string, error) {
+func cloudBrowse(ctx context.Context, c *client.Client, path string, page, size int, debug bool) (string, error) {
 	segments := strings.Split(strings.Trim(path, "/"), "/")
 	if len(segments) == 1 && segments[0] == "" {
 		segments = nil
 	}
 	parent := ""
-	query := func(parent string, page int) (string, cloudNamespace, error) {
-		q := map[string]any{"queryId": "browse", "page": page, "size": size}
+	query := func(parent string, page, querySize int) (string, cloudNamespace, error) {
+		q := map[string]any{"queryId": "browse", "page": page, "size": querySize}
 		if parent != "" {
 			q["parentId"] = parent
 		}
 		body := cmdutil.JSONString(map[string]any{"queries": []any{q}})
-		raw, err := cmdutil.DoAPI(ctx, "/openapi/v2/uns/namespace/query", "POST", body, debug)
+		raw, err := c.DoAPI(ctx, "/openapi/v2/uns/namespace/query", "POST", body, debug)
 		if err != nil {
 			return "", cloudNamespace{}, err
 		}
@@ -54,7 +55,7 @@ func cloudBrowse(ctx context.Context, path string, page, size int, debug bool) (
 			return "", result, fmt.Errorf("invalid Cloud namespace response")
 		}
 		item := result.Data.Results[0]
-		if item.QueryID != "browse" || item.List == nil || item.Page != page || item.Size != size || item.HasMore == nil {
+		if item.QueryID != "browse" || item.List == nil || item.Page != page || item.Size != querySize || item.HasMore == nil {
 			return "", result, fmt.Errorf("invalid Cloud namespace pagination")
 		}
 		return raw, result, nil
@@ -65,7 +66,7 @@ func cloudBrowse(ctx context.Context, path string, page, size int, debug bool) (
 		}
 		found := ""
 		for p := 1; p <= 100; p++ {
-			_, v, err := query(parent, p)
+			_, v, err := query(parent, p, 200)
 			if err != nil {
 				return "", err
 			}
@@ -82,7 +83,7 @@ func cloudBrowse(ctx context.Context, path string, page, size int, debug bool) (
 				break
 			}
 			if p == 100 {
-				return "", fmt.Errorf("Cloud namespace path exceeds 100 pages")
+				return "", fmt.Errorf("Cloud namespace path cannot be resolved uniquely: directory listing exceeds 100 pages")
 			}
 		}
 		if found == "" {
@@ -90,6 +91,6 @@ func cloudBrowse(ctx context.Context, path string, page, size int, debug bool) (
 		}
 		parent = found
 	}
-	raw, _, err := query(parent, page)
+	raw, _, err := query(parent, page, size)
 	return raw, err
 }
