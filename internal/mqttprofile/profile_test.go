@@ -1,6 +1,7 @@
 package mqttprofile
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -46,6 +47,20 @@ func TestStoreRoundTripAndDelete(t *testing.T) {
 	}
 	if _, err := store.Load("demo"); err == nil {
 		t.Fatal("expected deleted profile to be missing")
+	}
+}
+
+func TestPrepareRejectsUnsupportedSafeInstall(t *testing.T) {
+	store := &Store{Dir: t.TempDir()}
+	old := linkCredential
+	linkCredential = func(string, string) error { return errors.New("unsupported") }
+	t.Cleanup(func() { linkCredential = old })
+	if err := store.Prepare("demo"); err == nil {
+		t.Fatal("unsupported hard links accepted")
+	}
+	entries, err := os.ReadDir(store.Dir)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("probe files remain: %v %v", entries, err)
 	}
 }
 

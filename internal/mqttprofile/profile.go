@@ -15,6 +15,7 @@ import (
 const fileVersion = 1
 
 var profileNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+var linkCredential = os.Link
 
 // Credential is a locally saved MQTT credential. Password is intentionally
 // omitted from command diagnostics and must never be logged.
@@ -23,6 +24,7 @@ type Credential struct {
 	ID                          int64     `json:"id"`
 	Name                        string    `json:"name"`
 	BaseURL                     string    `json:"baseURL"`
+	APIVersion                  string    `json:"apiVersion,omitempty"`
 	Broker                      string    `json:"broker"`
 	ClientID                    string    `json:"clientID"`
 	Username                    string    `json:"username"`
@@ -80,6 +82,15 @@ func (s *Store) Prepare(name string) error {
 	if closeErr := probe.Close(); closeErr != nil {
 		_ = os.Remove(probePath)
 		return fmt.Errorf("close MQTT credential write test: %w", closeErr)
+	}
+	probeLink := probePath + ".link"
+	if err := linkCredential(probePath, probeLink); err != nil {
+		_ = os.Remove(probePath)
+		return fmt.Errorf("MQTT credential directory does not support safe profile installation: %w", err)
+	}
+	if err := os.Remove(probeLink); err != nil {
+		_ = os.Remove(probePath)
+		return fmt.Errorf("clean up MQTT credential link test: %w", err)
 	}
 	if err := os.Remove(probePath); err != nil {
 		return fmt.Errorf("clean up MQTT credential write test: %w", err)
@@ -144,11 +155,12 @@ func (s *Store) Save(name string, credential Credential) error {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("close MQTT credential: %w", err)
 	}
-	if err := os.Rename(tmpPath, path); err != nil {
+	// Link fails if another process installed the profile after Prepare.
+	if err := linkCredential(tmpPath, path); err != nil {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("install MQTT credential: %w", err)
 	}
-	_ = os.Chmod(path, 0o600)
+	_ = os.Remove(tmpPath)
 	return nil
 }
 

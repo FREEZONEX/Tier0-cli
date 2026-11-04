@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
+	"github.com/FREEZONEX/Tier0-cli/internal/errs"
 	"github.com/FREEZONEX/Tier0-cli/internal/highrisk"
 	"github.com/FREEZONEX/Tier0-cli/internal/mqttprofile"
 	"github.com/FREEZONEX/Tier0-cli/internal/notice"
@@ -41,6 +43,7 @@ func runMQTTAuthDelete(command *cobra.Command, args []string) error {
 		return invalidArgument(command, "--credential/--id", "--credential and --id are mutually exclusive")
 	}
 	var store *mqttprofile.Store
+	var profileOrigin string
 	if strings.TrimSpace(profileName) != "" {
 		var err error
 		store, err = mqttCredentialStore()
@@ -54,26 +57,65 @@ func runMQTTAuthDelete(command *cobra.Command, args []string) error {
 		if err := validateMQTTProfileBaseURL(profileName, credential.BaseURL); err != nil {
 			return configCommandError(command, "refusing to delete an MQTT credential from a different Tier0 instance", err)
 		}
+		profileOrigin = credential.BaseURL
+		switch credential.APIVersion {
+		case "v1", "v2":
+			profileCloud := credential.APIVersion == "v2"
+			if command.Flags().Changed("cloud") && cloud != profileCloud {
+				return invalidArgument(command, "--cloud", "does not match the saved credential API version")
+			}
+			if profileCloud {
+				endpoint = "/openapi/v2/mqtt-auth/delete"
+			} else {
+				endpoint = "/openapi/v1/mqtt-auth/delete"
+			}
+		case "":
+			if !command.Flags().Changed("cloud") {
+				return invalidArgument(command, "--cloud", "legacy credential has no API version; specify --cloud or --cloud=false")
+			}
+		default:
+			return invalidArgument(command, "--credential", "saved credential has an unknown API version")
+		}
 		id = credential.ID
 	}
 	if id <= 0 {
 		return invalidArgument(command, "--credential/--id", "specify --credential <profile> or --id <positive-id>")
 	}
 	payload := map[string]any{"id": id}
-	if handled, err := writeDryRun(command, "POST", endpoint, payload); handled {
+	if handled, err := writeMQTTAuthDryRun(command, endpoint, payload); handled {
 		return err
 	}
 	if err := highrisk.Guard(confirmed, "mqtt auth delete", fmt.Sprintf("Delete MQTT credential ID %d and prevent future broker connections.", id)); err != nil {
 		return err
 	}
-
-	checker := notice.Start()
-	resp, err := cmdutil.DoAPI(command.Context(), endpoint, "POST", cmdutil.JSONString(payload), debug)
+	c, err := cmdutil.NewConfiguredClient()
 	if err != nil {
 		return cmdutil.HandleCommandError(command.ErrOrStderr(), err, jsonMode)
 	}
+	if store != nil {
+		if err := validateMQTTProfileOrigin(profileName, profileOrigin, c.BaseURL()); err != nil {
+			return configCommandError(command, "refusing to delete an MQTT credential from a different Tier0 instance", err)
+		}
+	}
+
+	checker := notice.Start()
+	resp, err := c.DoAPI(command.Context(), endpoint, "POST", cmdutil.JSONString(payload), debug)
+	if err != nil {
+		unknown := errs.New(errs.CategoryAPI, 0, "MQTT credential deletion outcome is unknown; local profile was retained").WithHint("Inspect the remote credential before taking further action.", "")
+		return cmdutil.HandleCommandError(command.ErrOrStderr(), unknown, jsonMode)
+	}
 	if err := cmdutil.CheckResponse(resp); err != nil {
-		return cmdutil.HandleCommandError(command.ErrOrStderr(), err, jsonMode)
+		unknown := errs.New(errs.CategoryAPI, 0, "MQTT credential deletion outcome is unknown; local profile was retained").WithHint("Inspect the remote credential before taking further action.", "")
+		return cmdutil.HandleCommandError(command.ErrOrStderr(), unknown, jsonMode)
+	}
+	var result struct {
+		Code *int `json:"code"`
+		Data struct {
+			Success *bool `json:"success"`
+		} `json:"data"`
+	}
+	if json.Unmarshal([]byte(resp), &result) != nil || result.Code == nil || (*result.Code != 0 && *result.Code != 200) || result.Data.Success == nil || !*result.Data.Success {
+		return internalCommandError(command, "MQTT deletion was not confirmed; local profile was retained", nil)
 	}
 	if store != nil {
 		if err := store.Delete(profileName); err != nil {

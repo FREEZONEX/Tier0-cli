@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
+	"github.com/FREEZONEX/Tier0-cli/internal/errs"
 	"github.com/FREEZONEX/Tier0-cli/internal/mqttprofile"
 	"github.com/FREEZONEX/Tier0-cli/internal/notice"
 	"github.com/spf13/cobra"
@@ -67,8 +68,12 @@ func runMQTTAuthCreate(command *cobra.Command, args []string) error {
 	if strings.TrimSpace(description) != "" {
 		payload["description"] = strings.TrimSpace(description)
 	}
-	if handled, err := writeDryRun(command, "POST", endpoint, payload); handled {
+	if handled, err := writeMQTTAuthDryRun(command, endpoint, payload); handled {
 		return err
+	}
+	c, err := cmdutil.NewConfiguredClient()
+	if err != nil {
+		return cmdutil.HandleCommandError(command.ErrOrStderr(), err, jsonMode)
 	}
 
 	var (
@@ -84,32 +89,44 @@ func runMQTTAuthCreate(command *cobra.Command, args []string) error {
 		if err := store.Prepare(saveName); err != nil {
 			return invalidArgumentCause(command, "--save", err.Error(), err)
 		}
-		broker, err = discoverMQTTBroker(command, brokerOverride, debug)
+		broker, err = discoverMQTTBroker(command, c, brokerOverride, cloud, debug)
 		if err != nil {
 			return apiCommandError(command, "failed to discover MQTT broker before creating the credential", err)
 		}
 	}
 
 	checker := notice.Start()
-	resp, err := cmdutil.DoAPI(command.Context(), endpoint, "POST", cmdutil.JSONString(payload), debug)
+	resp, err := c.DoAPI(command.Context(), endpoint, "POST", cmdutil.JSONString(payload), debug)
 	if err != nil {
-		return cmdutil.HandleCommandError(command.ErrOrStderr(), err, jsonMode)
+		return mqttCreateUnknown(command, "MQTT credential creation outcome is unknown")
 	}
 	if err := cmdutil.CheckResponse(resp); err != nil {
-		return cmdutil.HandleCommandError(command.ErrOrStderr(), err, jsonMode)
+		return mqttCreateUnknown(command, "MQTT credential creation outcome is unknown")
+	}
+	var envelope struct {
+		Code *int            `json:"code"`
+		Data json.RawMessage `json:"data"`
+	}
+	if json.Unmarshal([]byte(resp), &envelope) != nil || envelope.Code == nil || (*envelope.Code != 0 && *envelope.Code != 200) || len(envelope.Data) == 0 {
+		return mqttCreateUnknown(command, "MQTT credential creation response is invalid; a credential may have been created")
 	}
 	var created mqttAuthCreateData
-	if err := json.Unmarshal([]byte(cmdutil.ExtractData(resp)), &created); err != nil {
-		return internalCommandError(command, "failed to parse MQTT credential response", err)
+	if err := json.Unmarshal(envelope.Data, &created); err != nil {
+		return mqttCreateUnknown(command, "MQTT credential creation response is invalid; a credential may have been created")
 	}
 	if created.ID <= 0 || created.ClientID == "" || created.Username == "" || created.Password == "" {
-		return internalCommandError(command, "MQTT credential response is incomplete", nil)
+		return mqttCreateUnknown(command, "MQTT credential creation response is incomplete; a credential may have been created")
 	}
 	if store != nil {
+		version := "v1"
+		if cloud {
+			version = "v2"
+		}
 		credential := mqttprofile.Credential{
 			ID:                          created.ID,
 			Name:                        created.Name,
-			BaseURL:                     cmdutil.ResolveBaseURL(""),
+			BaseURL:                     c.BaseURL(),
+			APIVersion:                  version,
 			Broker:                      broker,
 			ClientID:                    created.ClientID,
 			Username:                    created.Username,
@@ -118,11 +135,26 @@ func runMQTTAuthCreate(command *cobra.Command, args []string) error {
 			CreatedAt:                   time.Now().UTC(),
 		}
 		if err := store.Save(saveName, credential); err != nil {
-			return configCommandError(command, "credential was created remotely but could not be saved locally; delete remote credential ID "+fmt.Sprint(created.ID), err)
+			return mqttCreateUnknown(command, "MQTT credential ID "+fmt.Sprint(created.ID)+" was created remotely but could not be saved locally")
 		}
 	}
 
 	stdout := command.OutOrStdout()
+	if jsonMode && store != nil {
+		var envelope map[string]json.RawMessage
+		var data map[string]json.RawMessage
+		if json.Unmarshal([]byte(resp), &envelope) != nil || json.Unmarshal(envelope["data"], &data) != nil || data == nil {
+			return mqttCreateUnknown(command, "MQTT credential was created and saved, but its response could not be prepared")
+		}
+		for key := range data {
+			if strings.EqualFold(key, "password") {
+				delete(data, key)
+			}
+		}
+		envelope["data"], _ = json.Marshal(data)
+		redacted, _ := json.Marshal(envelope)
+		resp = string(redacted)
+	}
 	checker.Emit(resp, jsonMode, stdout, command.ErrOrStderr())
 	if jsonMode {
 		return nil
@@ -135,4 +167,10 @@ func runMQTTAuthCreate(command *cobra.Command, args []string) error {
 		fmt.Fprintf(stdout, "Password: %s\n\nSave this password now; it cannot be returned again by the OpenAPI.\n", created.Password)
 	}
 	return nil
+}
+
+func mqttCreateUnknown(command *cobra.Command, message string) error {
+	jsonMode, _ := command.Flags().GetBool("json")
+	err := errs.New(errs.CategoryAPI, 0, message).WithHint("Inspect remote credentials and the local profile before attempting another creation.", "")
+	return cmdutil.HandleCommandError(command.ErrOrStderr(), err, jsonMode)
 }

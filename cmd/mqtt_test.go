@@ -18,6 +18,7 @@ import (
 )
 
 func TestMQTTAuthCreateDryRun(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	t.Setenv("TIER0_BASE_URL", "https://example.test/")
 	stdout, stderr, err := executeRootForTest(
 		"mqtt", "auth", "create", "--name", "agent", "--description", "CLI agent",
@@ -40,6 +41,7 @@ func TestMQTTAuthCreateDryRun(t *testing.T) {
 }
 
 func TestMQTTAuthDeleteDryRunDoesNotRequireConfirmation(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	t.Setenv("TIER0_BASE_URL", "https://example.test")
 	stdout, stderr, err := executeRootForTest("mqtt", "auth", "delete", "--id", "42", "--dry-run", "--json")
 	if err != nil {
@@ -56,6 +58,7 @@ func TestMQTTAuthDeleteDryRunDoesNotRequireConfirmation(t *testing.T) {
 }
 
 func TestCloudMQTTAuthDryRunRoutes(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	t.Setenv("TIER0_BASE_URL", "https://example.test")
 	for _, tc := range []struct {
 		args []string
