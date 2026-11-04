@@ -155,7 +155,7 @@ func mqttMutationFailure(command *cobra.Command, operation string, cause error, 
 			code = status
 		}
 	} else if errors.As(cause, &cli) {
-		category, code = cli.Cat, cli.Code
+		category, code, status = cli.Cat, cli.Code, cli.HTTPStatus
 	}
 	if responseReceived {
 		// CheckResponse may synthesize an APIError with HTTP status 400 for

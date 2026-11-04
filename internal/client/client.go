@@ -104,7 +104,12 @@ func (c *Client) DoAPI(ctx context.Context, endpoint, method, body string, debug
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", errs.New(errs.CategoryNetwork, 0, "failed to read response: "+err.Error()).WithRetryable()
+		// HTTP status is already known even if the body is incomplete. Do not
+		// include a partial body: credential responses can contain secrets.
+		if resp.StatusCode >= 400 {
+			return "", apierr.New(resp.StatusCode, "HTTP error response body could not be read")
+		}
+		return "", errs.New(errs.CategoryNetwork, 0, "failed to read response: "+err.Error()).WithHTTPStatus(resp.StatusCode).WithRetryable()
 	}
 
 	if debug {

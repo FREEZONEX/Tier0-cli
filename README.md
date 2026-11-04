@@ -176,6 +176,8 @@ Automation should branch on these fields rather than matching message text.
 
 Use `mqtt auth create --cloud` for Cloud v2 credentials; without `--cloud`, creation uses Enterprise v1. Saved profiles record their API version and deletion selects the matching endpoint. Older profiles lack this information: specify `--cloud` or `--cloud=false` explicitly when deleting them. The CLI does not retry a credential mutation against another API version. With `--save --json`, the password is stored in the local profile and omitted from stdout.
 
+The profile lifecycle lock coordinates processes using this CLI version. Older CLI versions or other programs can change profile files without honoring it; a credential comparison before removal detects replacements already made, but cannot eliminate an external change between the comparison and removal.
+
 ## Flow Types
 
 | Type | Meaning |

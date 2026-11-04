@@ -118,6 +118,52 @@ func TestMQTTMutationHTTPErrorKeepsCategoryAndUnknownExecution(t *testing.T) {
 	}
 }
 
+func TestMQTTMutationTruncatedResponseKeepsHTTPStatus(t *testing.T) {
+	for _, tc := range []struct {
+		status   int
+		category errs.Category
+		exit     int
+	}{
+		{200, errs.CategoryNetwork, 4}, {400, errs.CategoryValidation, 2}, {401, errs.CategoryAuthentication, 3}, {403, errs.CategoryAuthorization, 3}, {503, errs.CategoryAPI, 1},
+	} {
+		for _, action := range []string{"create", "delete"} {
+			t.Run(fmt.Sprintf("%s-%d", action, tc.status), func(t *testing.T) {
+				t.Setenv("HOME", t.TempDir())
+				t.Setenv("TIER0_BASE_URL", "")
+				calls := 0
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					calls++
+					w.Header().Set("Content-Length", "200")
+					w.WriteHeader(tc.status)
+					fmt.Fprint(w, `{"password":"synthetic-private`)
+				}))
+				defer srv.Close()
+				if err := config.SaveProfile(config.Profile{BaseURL: srv.URL, APIKey: "synthetic"}); err != nil {
+					t.Fatal(err)
+				}
+				args := []string{"mqtt", "auth", action, "--cloud", "--json"}
+				if action == "create" {
+					args = append(args, "--name", "agent")
+				} else {
+					args = append(args, "--id", "42", "--yes")
+				}
+				out, stderr, err := executeRootForTest(args...)
+				var result struct {
+					Error struct {
+						Type       errs.Category `json:"type"`
+						HTTPStatus int           `json:"http_status"`
+						Execution  string        `json:"execution"`
+						Retryable  bool          `json:"retryable"`
+					} `json:"error"`
+				}
+				if err == nil || json.Unmarshal([]byte(stderr), &result) != nil || calls != 1 || result.Error.Type != tc.category || result.Error.HTTPStatus != tc.status || result.Error.Execution != "unknown" || result.Error.Retryable || errs.ExitCode(cmdutil.CategoryOf(err)) != tc.exit || strings.Contains(out+stderr, "synthetic-private") {
+					t.Fatalf("calls=%d err=%v stderr=%s", calls, err, stderr)
+				}
+			})
+		}
+	}
+}
+
 func TestMQTTDeleteBusinessFailureDoesNotInventHTTPStatus(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("TIER0_BASE_URL", "")
