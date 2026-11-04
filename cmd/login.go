@@ -3,10 +3,12 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/auth"
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
 	"github.com/FREEZONEX/Tier0-cli/internal/config"
+	"github.com/FREEZONEX/Tier0-cli/internal/errs"
 	"github.com/spf13/cobra"
 )
 
@@ -57,9 +59,11 @@ func runLogin(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(stdout,
 				"setup_code: %s\n",
 				setupCode)
-			fmt.Fprintf(stdout,
-				"Polling automatically with: tier0 login --setup-code %s\n",
-				setupCode)
+			fmt.Fprintf(stdout, "Polling with: tier0 login --setup-code %s", setupCode)
+			if noKeyOutput {
+				fmt.Fprint(stdout, " --no-key-output")
+			}
+			fmt.Fprintln(stdout)
 		}
 		return nil
 	}
@@ -97,6 +101,19 @@ func loginPoll(cmd *cobra.Command, baseURL, setupCode string, jsonMode, noKeyOut
 	})
 	if err != nil {
 		return cmdutil.HandleCommandError(stderr, err, jsonMode)
+	}
+	if strings.TrimSpace(result.APIKey) == "" {
+		// A completed response without a credential must never leave a previous
+		// identity looking like the result of this login.
+		previous, loadErr := config.LoadProfile()
+		if loadErr != nil {
+			return configCommandError(cmd, "login returned no API key and the existing profile could not be cleared", loadErr)
+		}
+		previous.APIKey = ""
+		if saveErr := config.ReplaceProfile(previous); saveErr != nil {
+			return configCommandError(cmd, "login returned no API key and the existing profile could not be cleared", saveErr)
+		}
+		return cmdutil.HandleCommandError(stderr, errs.New(errs.CategoryAPI, 0, "login completed without an API key; saved credential was cleared"), jsonMode)
 	}
 
 	profile := config.Profile{
