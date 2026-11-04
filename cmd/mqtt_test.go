@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -9,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/FREEZONEX/Tier0-cli/internal/config"
 	"github.com/FREEZONEX/Tier0-cli/internal/mqttprofile"
 	"github.com/FREEZONEX/Tier0-cli/internal/mqtttransport"
 )
@@ -48,6 +52,57 @@ func TestMQTTAuthDeleteDryRunDoesNotRequireConfirmation(t *testing.T) {
 	call := envelope.Data.API[0]
 	if call.URL != "https://example.test/openapi/v1/mqtt-auth/delete" || call.Body["id"] != float64(42) {
 		t.Fatalf("unexpected dry-run: %#v", call)
+	}
+}
+
+func TestCloudMQTTAuthDryRunRoutes(t *testing.T) {
+	t.Setenv("TIER0_BASE_URL", "https://example.test")
+	for _, tc := range []struct {
+		args []string
+		path string
+	}{
+		{[]string{"mqtt", "auth", "create", "--name", "agent", "--cloud", "--dry-run", "--json"}, "/openapi/v2/mqtt-auth/create"},
+		{[]string{"mqtt", "auth", "delete", "--id", "42", "--cloud", "--dry-run", "--json"}, "/openapi/v2/mqtt-auth/delete"},
+	} {
+		stdout, stderr, err := executeRootForTest(tc.args...)
+		if err != nil {
+			t.Fatalf("%v: %v %s", tc.args, err, stderr)
+		}
+		var envelope dryRunTestEnvelope
+		if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		if got := envelope.Data.API[0].URL; got != "https://example.test"+tc.path {
+			t.Fatalf("unexpected URL %s", got)
+		}
+	}
+}
+
+func TestCloudMQTTAuthRequests(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if r.URL.Path == "/openapi/v2/mqtt-auth/create" {
+			fmt.Fprint(w, `{"code":200,"data":{"id":42,"name":"agent","clientID":"client","username":"user","password":"synthetic"}}`)
+		} else {
+			fmt.Fprint(w, `{"code":200,"data":{"success":true}}`)
+		}
+	}))
+	defer srv.Close()
+	if err := config.SaveProfile(config.Profile{BaseURL: srv.URL, APIKey: "synthetic"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"mqtt", "auth", "create", "--cloud", "--name", "agent", "--json"},
+		{"mqtt", "auth", "delete", "--cloud", "--id", "42", "--yes", "--json"},
+	} {
+		if _, stderr, err := executeRootForTest(args...); err != nil {
+			t.Fatalf("%v: %v %s", args, err, stderr)
+		}
+	}
+	if len(paths) != 2 || paths[0] != "/openapi/v2/mqtt-auth/create" || paths[1] != "/openapi/v2/mqtt-auth/delete" {
+		t.Fatalf("paths=%v", paths)
 	}
 }
 

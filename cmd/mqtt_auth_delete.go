@@ -19,6 +19,7 @@ var mqttAuthDeleteCmd = &cobra.Command{
 }
 
 func init() {
+	mqttAuthDeleteCmd.Flags().Bool("cloud", false, "Use the Cloud v2 MQTT credential endpoint")
 	mqttAuthDeleteCmd.Flags().String("credential", "", "Saved MQTT credential profile")
 	mqttAuthDeleteCmd.Flags().Int64("id", 0, "Remote MQTT credential ID")
 	mqttAuthDeleteCmd.Flags().BoolP("yes", "y", false, "Confirm credential deletion")
@@ -31,6 +32,11 @@ func runMQTTAuthDelete(command *cobra.Command, args []string) error {
 	confirmed, _ := command.Flags().GetBool("yes")
 	jsonMode, _ := command.Flags().GetBool("json")
 	debug, _ := command.Flags().GetBool("debug")
+	cloud, _ := command.Flags().GetBool("cloud")
+	endpoint := "/openapi/v1/mqtt-auth/delete"
+	if cloud {
+		endpoint = "/openapi/v2/mqtt-auth/delete"
+	}
 	if strings.TrimSpace(profileName) != "" && id != 0 {
 		return invalidArgument(command, "--credential/--id", "--credential and --id are mutually exclusive")
 	}
@@ -54,7 +60,7 @@ func runMQTTAuthDelete(command *cobra.Command, args []string) error {
 		return invalidArgument(command, "--credential/--id", "specify --credential <profile> or --id <positive-id>")
 	}
 	payload := map[string]any{"id": id}
-	if handled, err := writeDryRun(command, "POST", "/openapi/v1/mqtt-auth/delete", payload); handled {
+	if handled, err := writeDryRun(command, "POST", endpoint, payload); handled {
 		return err
 	}
 	if err := highrisk.Guard(confirmed, "mqtt auth delete", fmt.Sprintf("Delete MQTT credential ID %d and prevent future broker connections.", id)); err != nil {
@@ -62,7 +68,7 @@ func runMQTTAuthDelete(command *cobra.Command, args []string) error {
 	}
 
 	checker := notice.Start()
-	resp, err := cmdutil.DoAPI(command.Context(), "/openapi/v1/mqtt-auth/delete", "POST", cmdutil.JSONString(payload), debug)
+	resp, err := cmdutil.DoAPI(command.Context(), endpoint, "POST", cmdutil.JSONString(payload), debug)
 	if err != nil {
 		return cmdutil.HandleCommandError(command.ErrOrStderr(), err, jsonMode)
 	}
