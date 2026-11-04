@@ -20,6 +20,7 @@ var unsBrowseCmd = &cobra.Command{
 }
 
 func init() {
+	unsBrowseCmd.Flags().String("parent-id", "", "List children of this Cloud directory ID (requires --cloud; cannot be combined with --path)")
 	unsBrowseCmd.Flags().Bool("cloud", false, "Use Cloud v2 namespace query and return its native paginated response")
 	unsBrowseCmd.Flags().Int("page", 1, "Cloud page number (requires --cloud)")
 	unsBrowseCmd.Flags().Int("path-max-pages", 1000, "Maximum pages per Cloud path segment (requires --cloud; 1-10000)")
@@ -59,8 +60,12 @@ func runUnsBrowse(cmd *cobra.Command, args []string) error {
 	page, _ := cmd.Flags().GetInt("page")
 	size, _ := cmd.Flags().GetInt("size")
 	maxPages, _ := cmd.Flags().GetInt("path-max-pages")
-	if (cmd.Flags().Changed("page") || cmd.Flags().Changed("size") || cmd.Flags().Changed("path-max-pages")) && !cloud {
-		return invalidArgument(cmd, "--page/--size/--path-max-pages", "requires --cloud")
+	parentID, _ := cmd.Flags().GetString("parent-id")
+	if (cmd.Flags().Changed("page") || cmd.Flags().Changed("size") || cmd.Flags().Changed("path-max-pages") || cmd.Flags().Changed("parent-id")) && !cloud {
+		return invalidArgument(cmd, "--page/--size/--path-max-pages/--parent-id", "requires --cloud")
+	}
+	if cmd.Flags().Changed("parent-id") && (cmd.Flags().Changed("path") || strings.TrimSpace(parentID) == "") {
+		return invalidArgument(cmd, "--parent-id", "must be nonempty and cannot be combined with --path")
 	}
 	if page < 1 || size < 1 || size > 200 || maxPages < 1 || maxPages > 10000 {
 		return invalidArgument(cmd, "--page/--size/--path-max-pages", "page must be positive, size 1-200 and path-max-pages 1-10000")
@@ -92,7 +97,7 @@ func runUnsBrowse(cmd *cobra.Command, args []string) error {
 		if strings.TrimSpace(path) != path {
 			return invalidArgument(cmd, "--path", "Cloud path cannot have leading or trailing whitespace")
 		}
-		resp, err = cloudBrowse(cmd.Context(), c, path, page, size, maxPages, debug)
+		resp, err = cloudBrowse(cmd.Context(), c, path, parentID, page, size, maxPages, debug)
 		if err != nil {
 			return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
 		}

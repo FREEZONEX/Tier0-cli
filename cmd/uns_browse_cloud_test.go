@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
 	"github.com/FREEZONEX/Tier0-cli/internal/config"
@@ -413,7 +414,7 @@ func TestCloudBrowseErrorsAreClassifiedOnce(t *testing.T) {
 			}
 			path := "missing"
 			if mode == "invalid-path" {
-				path = "."
+				path = "a//b"
 			}
 			_, stderr, err := executeRootForTest("uns", "browse", "--cloud", "--path", path, "--json")
 			if err == nil || !cmdutil.IsClassified(err) {
@@ -467,6 +468,116 @@ func TestCloudPathCanScanMoreThanTwentyThousandMatches(t *testing.T) {
 	}
 	_, _, err := executeRootForTest("uns", "browse", "--cloud", "--path", "Plant", "--size", "1", "--path-max-pages", "102", "--json")
 	if err != nil || calls != 102 {
+		t.Fatalf("err=%v calls=%d", err, calls)
+	}
+}
+
+func TestCloudSearchPrefixUnicodeAndLikeSpecials(t *testing.T) {
+	for _, tc := range []struct{ name, want string }{
+		{strings.Repeat("界", 63), strings.Repeat("界", 42)},
+		{"abc%tail", "abc"}, {"under_score", "under"}, {"_leading", ""}, {`back\slash`, "back"}, {".", "."}, {"..", ".."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := cloudSearchPrefix(tc.name)
+			if got != tc.want || len(got) > 128 || !utf8.ValidString(got) {
+				t.Fatalf("prefix=%q want=%q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCloudBrowseLiteralDotDirectoriesAndLongName(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("TIER0_BASE_URL", "")
+	name := strings.Repeat("界", 63)
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var req struct {
+			Queries []struct {
+				Parent string `json:"parentId"`
+				Search string `json:"search"`
+				Page   int    `json:"page"`
+				Size   int    `json:"size"`
+			} `json:"queries"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		q := req.Queries[0]
+		list := []any{}
+		switch q.Parent {
+		case "":
+			if q.Search != "." {
+				t.Errorf("dot search=%q", q.Search)
+			}
+			list = append(list, map[string]any{"id": "dot", "kind": "directory", "data": map[string]string{"name": "."}})
+		case "dot":
+			if q.Search != ".." {
+				t.Errorf("double dot search=%q", q.Search)
+			}
+			list = append(list, map[string]any{"id": "dotdot", "kind": "directory", "data": map[string]string{"name": ".."}})
+		case "dotdot":
+			if q.Search != strings.Repeat("界", 42) {
+				t.Errorf("unicode search length=%d", len(q.Search))
+			}
+			list = append(list, map[string]any{"id": "long", "kind": "directory", "data": map[string]string{"name": name}})
+		case "long":
+			if q.Search != "" || q.Size != 1 {
+				t.Errorf("result query %+v", q)
+			}
+		default:
+			t.Errorf("unexpected parent %q", q.Parent)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 200, "data": map[string]any{"results": []any{map[string]any{"queryId": "browse", "list": list, "page": q.Page, "size": q.Size, "hasMore": false}}}})
+	}))
+	defer server.Close()
+	if err := config.SaveProfile(config.Profile{BaseURL: server.URL, APIKey: "synthetic"}); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := executeRootForTest("uns", "browse", "--cloud", "--path", "./../"+name, "--size", "1", "--json")
+	if err != nil || calls != 4 {
+		t.Fatalf("err=%v calls=%d", err, calls)
+	}
+}
+
+func TestCloudBrowseParentIDAndEnterpriseCompatibility(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("TIER0_BASE_URL", "")
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.URL.Path == "/openapi/v1/uns/browse" {
+			var b map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&b)
+			if b["path"] != "." {
+				t.Errorf("enterprise path=%v", b["path"])
+			}
+			fmt.Fprint(w, `{"code":200,"data":{"tree":[]}}`)
+			return
+		}
+		var b struct {
+			Queries []struct {
+				Parent string `json:"parentId"`
+				Size   int    `json:"size"`
+			} `json:"queries"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		if len(b.Queries) != 1 || b.Queries[0].Parent != "opaque-id" {
+			t.Errorf("parent request %+v", b)
+		}
+		fmt.Fprint(w, `{"code":200,"data":{"results":[{"queryId":"browse","list":[],"page":1,"size":100,"hasMore":false}]}}`)
+	}))
+	defer server.Close()
+	if err := config.SaveProfile(config.Profile{BaseURL: server.URL, APIKey: "synthetic"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeRootForTest("uns", "browse", "--path", ".", "--json"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := executeRootForTest("uns", "browse", "--cloud", "--parent-id", "opaque-id", "--json"); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := executeRootForTest("uns", "browse", "--cloud", "--parent-id", "opaque-id", "--path", ".", "--json")
+	if err == nil || calls != 2 {
 		t.Fatalf("err=%v calls=%d", err, calls)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/apierr"
 	"github.com/FREEZONEX/Tier0-cli/internal/client"
@@ -35,12 +36,12 @@ type cloudNamespace struct {
 	} `json:"data"`
 }
 
-func cloudBrowse(ctx context.Context, c *client.Client, path string, page, size, maxPages int, debug bool) (string, error) {
+func cloudBrowse(ctx context.Context, c *client.Client, path, parentID string, page, size, maxPages int, debug bool) (string, error) {
 	segments := strings.Split(strings.Trim(path, "/"), "/")
 	if len(segments) == 1 && segments[0] == "" {
 		segments = nil
 	}
-	parent := ""
+	parent := parentID
 	query := func(parent, search string, page, querySize int) (string, cloudNamespace, error) {
 		q := map[string]any{"queryId": "browse", "page": page, "size": querySize}
 		if search != "" {
@@ -68,17 +69,14 @@ func cloudBrowse(ctx context.Context, c *client.Client, path string, page, size,
 		return raw, result, nil
 	}
 	for _, segment := range segments {
-		if segment == "" || segment == "." || segment == ".." {
+		if segment == "" || !utf8.ValidString(segment) {
 			return "", errs.InvalidArgument("--path", "invalid Cloud namespace path")
 		}
 		found := ""
-		// Search is case-insensitive substring matching (and also searches IDs),
-		// so the client still checks every result for an exact directory name.
-		// A backslash has LIKE escape semantics; omit the optimization there.
-		search := segment
-		if strings.Contains(segment, `\`) {
-			search = ""
-		}
+		// ILIKE is substring matching and also searches IDs. Use a valid UTF-8
+		// prefix bounded by the server's 128-byte limit; wildcard and escape
+		// characters terminate the optimization, never the exact comparison.
+		search := cloudSearchPrefix(segment)
 		querySize := 200
 		for {
 			found = "" // a smaller page size changes offsets: rescan from page 1.
@@ -122,4 +120,16 @@ func cloudBrowse(ctx context.Context, c *client.Client, path string, page, size,
 	}
 	raw, _, err := query(parent, "", page, size)
 	return raw, err
+}
+
+// cloudSearchPrefix cannot narrow out a literal match under PostgreSQL ILIKE.
+func cloudSearchPrefix(name string) string {
+	end := 0
+	for offset, r := range name {
+		if r == '%' || r == '_' || r == '\\' || offset+utf8.RuneLen(r) > 128 {
+			break
+		}
+		end = offset + utf8.RuneLen(r)
+	}
+	return name[:end]
 }
