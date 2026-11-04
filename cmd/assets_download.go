@@ -89,6 +89,7 @@ Examples:
 }
 
 func init() {
+	assetsDownloadCmd.Flags().Bool("cloud", false, "Use Cloud v2 file download endpoint only")
 	assetsDownloadCmd.Flags().String("file-path", "", "File path returned by upload")
 	assetsDownloadCmd.Flags().StringP("output", "o", "", "Output file path (default: stdout)")
 	assetsDownloadCmd.Flags().String("content-disposition", "", "Custom Content-Disposition")
@@ -101,6 +102,7 @@ func runAssetsDownload(cmd *cobra.Command, args []string) error {
 	filePath, _ := cmd.Flags().GetString("file-path")
 	output, _ := cmd.Flags().GetString("output")
 	contentDisposition, _ := cmd.Flags().GetString("content-disposition")
+	cloud, _ := cmd.Flags().GetBool("cloud")
 
 	profile, err := config.LoadProfile()
 	if err != nil {
@@ -135,7 +137,7 @@ func runAssetsDownload(cmd *cobra.Command, args []string) error {
 		return client.Do(req)
 	}
 	resp, err := get("v2")
-	if err == nil && !redirected && resp.StatusCode == http.StatusNotFound {
+	if !cloud && err == nil && !redirected && resp.StatusCode == http.StatusNotFound {
 		resp.Body.Close()
 		resp, err = get("v1")
 	}

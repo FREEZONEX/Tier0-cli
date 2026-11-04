@@ -116,7 +116,7 @@ func (c *Client) DoAPI(ctx context.Context, endpoint, method, body string, debug
 		debugBody := redactDebugPayload(string(respBody))
 		// Credential creation responses can contain one-time passwords even if
 		// the response is truncated and cannot be parsed as JSON.
-		if strings.HasSuffix(endpoint, "/mqtt-auth/create") && !json.Valid(respBody) {
+		if (strings.HasSuffix(endpoint, "/mqtt-auth/create") || strings.Contains(endpoint, "/assets/files")) && !json.Valid(respBody) {
 			debugBody = "<debug body redacted>"
 		}
 		fmt.Fprintf(os.Stderr, "[debug] ---------- HTTP Response ---------\n")
@@ -171,6 +171,8 @@ func sensitiveDebugKey(key string) bool {
 	return strings.Contains(normalized, "password") ||
 		strings.Contains(normalized, "secret") ||
 		strings.Contains(normalized, "token") ||
+		strings.Contains(normalized, "signature") ||
+		normalized == "postfields" || normalized == "posturl" || normalized == "fileurl" ||
 		normalized == "apikey" || normalized == "authorization" || normalized == "privatekey"
 }
 
