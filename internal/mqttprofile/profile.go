@@ -10,11 +10,14 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/gofrs/flock"
 )
 
 const fileVersion = 1
 
 var profileNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+var linkCredential = os.Link
 
 // Credential is a locally saved MQTT credential. Password is intentionally
 // omitted from command diagnostics and must never be logged.
@@ -23,6 +26,7 @@ type Credential struct {
 	ID                          int64     `json:"id"`
 	Name                        string    `json:"name"`
 	BaseURL                     string    `json:"baseURL"`
+	APIVersion                  string    `json:"apiVersion,omitempty"`
 	Broker                      string    `json:"broker"`
 	ClientID                    string    `json:"clientID"`
 	Username                    string    `json:"username"`
@@ -43,6 +47,30 @@ func DefaultStore() (*Store, error) {
 		return nil, fmt.Errorf("resolve user home: %w", err)
 	}
 	return &Store{Dir: filepath.Join(home, ".tier0", "mqtt")}, nil
+}
+
+// Lock serializes a profile's lifecycle across cooperating CLI processes.
+// The lock file is retained so concurrent processes always lock the same inode.
+func (s *Store) Lock(name string) (*flock.Flock, error) {
+	path, err := s.path(name)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(s.Dir, 0700); err != nil {
+		return nil, fmt.Errorf("create MQTT credential directory: %w", err)
+	}
+	if err := os.Chmod(s.Dir, 0700); err != nil {
+		return nil, fmt.Errorf("secure MQTT credential directory: %w", err)
+	}
+	lock := flock.New(path + ".lock")
+	ok, err := lock.TryLock()
+	if err != nil {
+		return nil, fmt.Errorf("lock MQTT profile: %w", err)
+	}
+	if !ok {
+		return nil, errors.New("MQTT profile is in use by another process")
+	}
+	return lock, nil
 }
 
 // ValidateName rejects profile names that could escape the credential folder.
@@ -80,6 +108,15 @@ func (s *Store) Prepare(name string) error {
 	if closeErr := probe.Close(); closeErr != nil {
 		_ = os.Remove(probePath)
 		return fmt.Errorf("close MQTT credential write test: %w", closeErr)
+	}
+	probeLink := probePath + ".link"
+	if err := linkCredential(probePath, probeLink); err != nil {
+		_ = os.Remove(probePath)
+		return fmt.Errorf("MQTT credential directory does not support safe profile installation: %w", err)
+	}
+	if err := os.Remove(probeLink); err != nil {
+		_ = os.Remove(probePath)
+		return fmt.Errorf("clean up MQTT credential link test: %w", err)
 	}
 	if err := os.Remove(probePath); err != nil {
 		return fmt.Errorf("clean up MQTT credential write test: %w", err)
@@ -144,11 +181,12 @@ func (s *Store) Save(name string, credential Credential) error {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("close MQTT credential: %w", err)
 	}
-	if err := os.Rename(tmpPath, path); err != nil {
+	// Link fails if another process installed the profile after Prepare.
+	if err := linkCredential(tmpPath, path); err != nil {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("install MQTT credential: %w", err)
 	}
-	_ = os.Chmod(path, 0o600)
+	_ = os.Remove(tmpPath)
 	return nil
 }
 
@@ -188,6 +226,18 @@ func (s *Store) Delete(name string) error {
 		return fmt.Errorf("delete MQTT credential profile: %w", err)
 	}
 	return nil
+}
+
+// DeleteIfUnchanged must be called while holding the lifecycle lock.
+func (s *Store) DeleteIfUnchanged(name string, expected Credential) error {
+	current, err := s.Load(name)
+	if err != nil {
+		return fmt.Errorf("profile could not be rechecked: %w", err)
+	}
+	if current != expected {
+		return errors.New("profile changed while remote deletion was in progress")
+	}
+	return s.Delete(name)
 }
 
 func (s *Store) path(name string) (string, error) {

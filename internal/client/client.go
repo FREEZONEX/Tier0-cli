@@ -23,6 +23,9 @@ type Client struct {
 	client  *http.Client
 }
 
+// BaseURL is the origin bound to this client and its credential.
+func (c *Client) BaseURL() string { return c.baseURL }
+
 // New creates an API client.
 func New(baseURL, apiKey string) *Client {
 	return &Client{
@@ -101,11 +104,21 @@ func (c *Client) DoAPI(ctx context.Context, endpoint, method, body string, debug
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", errs.New(errs.CategoryNetwork, 0, "failed to read response: "+err.Error()).WithRetryable()
+		// HTTP status is already known even if the body is incomplete. Do not
+		// include a partial body: credential responses can contain secrets.
+		if resp.StatusCode >= 400 {
+			return "", apierr.New(resp.StatusCode, "HTTP error response body could not be read")
+		}
+		return "", errs.New(errs.CategoryNetwork, 0, "failed to read response: "+err.Error()).WithHTTPStatus(resp.StatusCode).WithRetryable()
 	}
 
 	if debug {
 		debugBody := redactDebugPayload(string(respBody))
+		// Credential creation responses can contain one-time passwords even if
+		// the response is truncated and cannot be parsed as JSON.
+		if strings.HasSuffix(endpoint, "/mqtt-auth/create") && !json.Valid(respBody) {
+			debugBody = "<debug body redacted>"
+		}
 		fmt.Fprintf(os.Stderr, "[debug] ---------- HTTP Response ---------\n")
 		fmt.Fprintf(os.Stderr, "[debug] Status: %d %s\n", resp.StatusCode, resp.Status)
 		if len(debugBody) > 4096 {

@@ -174,7 +174,9 @@ Automation should branch on these fields rather than matching message text.
 
 `flow list --cloud` lists Cloud stream programs and returns the native paginated Cloud response. `--page` and `--size` select a page (size 1–200), and `--keyword` maps to the Cloud search field; Enterprise `--source`, `--event`, and `--type` are rejected in this mode because SourceFlow/EventFlow are not Cloud Stream types. Other `flow` commands still implement Enterprise Node-RED contracts; use the documented Cloud Source/Stream APIs through `tier0 api` instead of treating them as equivalent or retrying a write under another API.
 
-Use `mqtt auth create --cloud` and `mqtt auth delete --cloud` for Cloud v2 credentials; without `--cloud` these commands use Enterprise v1. When deleting a saved Cloud credential, specify `--cloud` again. The CLI does not retry a credential mutation against another API version.
+Use `mqtt auth create --cloud` for Cloud v2 credentials; without `--cloud`, creation uses Enterprise v1. Saved profiles record their API version and deletion selects the matching endpoint. Older profiles lack this information: specify `--cloud` or `--cloud=false` explicitly when deleting them. The CLI does not retry a credential mutation against another API version. With `--save --json`, the password is stored in the local profile and omitted from stdout.
+
+The profile lifecycle lock coordinates processes using this CLI version. Older CLI versions or other programs can change profile files without honoring it; a credential comparison before removal detects replacements already made, but cannot eliminate an external change between the comparison and removal.
 
 ## Flow Types
 
@@ -233,7 +235,7 @@ Tier0 CLI output is English-only. The legacy `--lang en` flag is accepted for co
 
 | Variable | Meaning |
 | --- | --- |
-| `TIER0_BASE_URL` | Override the base URL for login, dry-run previews, MQTT profile selection, and doctor connectivity checks without a saved key; not for authenticated doctor or ordinary OpenAPI requests |
+| `TIER0_BASE_URL` | Override the base URL for login, most dry-run previews, MQTT profile selection when no API origin is saved, and doctor connectivity checks without a saved key; authenticated OpenAPI requests and MQTT credential previews use the saved API origin |
 | `TIER0_MQTT_BROKER` | MQTT broker used without a saved credential profile |
 | `TIER0_MQTT_CLIENT_ID` | MQTT client ID used without a saved credential profile |
 | `TIER0_MQTT_USERNAME` | MQTT username used without a saved credential profile |
