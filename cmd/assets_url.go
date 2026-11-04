@@ -22,6 +22,7 @@ Examples:
 }
 
 func init() {
+	assetsUrlCmd.Flags().Bool("cloud", false, "Use Cloud v2 files URL endpoint")
 	assetsUrlCmd.Flags().String("file-path", "", "File path returned by upload")
 	assetsUrlCmd.Flags().Int("expired-sec", 3600, "Presigned URL expiration seconds")
 	assetsUrlCmd.Flags().String("content-disposition", "", "Custom Content-Disposition")
@@ -29,7 +30,7 @@ func init() {
 }
 
 type assetsUrlResponse struct {
-	Code int    `json:"code"`
+	Code *int   `json:"code"`
 	Msg  string `json:"msg"`
 	Data struct {
 		FileURL   string `json:"fileUrl"`
@@ -44,7 +45,14 @@ func runAssetsUrl(cmd *cobra.Command, args []string) error {
 	expiredSec, _ := cmd.Flags().GetInt("expired-sec")
 	contentDisposition, _ := cmd.Flags().GetString("content-disposition")
 
-	u := fmt.Sprintf("/openapi/v1/assets/files/url?filePath=%s&expiredSec=%d", url.QueryEscape(filePath), expiredSec)
+	version := "v1"
+	if cloud, _ := cmd.Flags().GetBool("cloud"); cloud {
+		if contentDisposition != "" {
+			return invalidArgument(cmd, "--content-disposition", "Cloud file URL does not support content disposition")
+		}
+		version = "v2"
+	}
+	u := fmt.Sprintf("/openapi/%s/assets/files/url?filePath=%s&expiredSec=%d", version, url.QueryEscape(filePath), expiredSec)
 	if contentDisposition != "" {
 		u += "&responseContentDisposition=" + url.QueryEscape(contentDisposition)
 	}
@@ -58,8 +66,15 @@ func runAssetsUrl(cmd *cobra.Command, args []string) error {
 	if err := json.Unmarshal([]byte(resp), &urlResp); err != nil {
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("parse url response: %w", err), jsonMode)
 	}
-	if urlResp.Code != 0 && urlResp.Code != 200 {
-		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), apierr.NewBusiness(urlResp.Code, resp), jsonMode)
+	if urlResp.Code == nil {
+		return apiCommandError(cmd, "invalid file URL response", nil)
+	}
+	if *urlResp.Code != 0 && *urlResp.Code != 200 {
+		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), apierr.NewBusiness(*urlResp.Code, resp), jsonMode)
+	}
+
+	if urlResp.Data.FileURL == "" {
+		return apiCommandError(cmd, "invalid file URL response", nil)
 	}
 
 	result := map[string]any{

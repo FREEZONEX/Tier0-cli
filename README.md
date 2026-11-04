@@ -168,6 +168,12 @@ Automation should branch on these fields rather than matching message text.
 
 `uns browse` first uses the Enterprise v1 browse contract. If that endpoint returns HTTP 404, it queries the Cloud v2 namespace endpoint. Cloud returns its native paginated `data.results` response, rather than Enterprise's `data.tree`; its IDs, kinds, and metadata have Cloud semantics. Cloud paths identify directories by exact name, including literal `.` and `..`, and the result lists their children. Use `--cloud --parent-id <id>` to list a known directory by its opaque Cloud ID; it cannot be combined with `--path`. Path resolution uses Cloud substring search and checks every matching page for an exact, unique directory name. It starts at 200 entries per page and restarts with smaller pages on Cloud `RESPONSE_TOO_LARGE`. The default limit is 1000 pages per segment per attempt; `--path-max-pages` with `--cloud` can set 1–10000. It fails explicitly when the limit prevents a complete uniqueness check. Cloud pagination is per request and is not an atomic snapshot across pages. `--cloud` selects v2 directly; `--page` and `--size` require `--cloud` (size 1–200). Cloud does not support the v1 `--max-depth` values other than 1, `--include-metadata`, or `--include-leaf-value` through this command; requests using them fail explicitly. Cloud App Keys can be denied by the server's namespace policy. Other UNS commands may still target v1 and require a compatible server.
 
+## Cloud files and stream programs
+
+`assets url --cloud --file-path <path>` uses the Cloud v2 file URL contract. Without `--cloud` the command uses Enterprise v1; neither route is automatically retried against the other. Only request URLs for files already owned by the Workspace, and treat signed URLs as secrets.
+
+`flow list --cloud` lists Cloud stream programs and returns the native paginated Cloud response. `--page` and `--size` select a page (size 1–200), and `--keyword` maps to the Cloud search field; Enterprise `--source`, `--event`, and `--type` are rejected in this mode because SourceFlow/EventFlow are not Cloud Stream types. Other `flow` commands still implement Enterprise Node-RED contracts; use the documented Cloud Source/Stream APIs through `tier0 api` instead of treating them as equivalent or retrying a write under another API.
+
 ## Flow Types
 
 | Type | Meaning |

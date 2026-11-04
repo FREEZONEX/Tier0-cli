@@ -23,6 +23,9 @@ var flowListCmd = &cobra.Command{
 }
 
 func init() {
+	flowListCmd.Flags().Bool("cloud", false, "List Cloud stream programs using the native Cloud contract")
+	flowListCmd.Flags().Int("page", 1, "Cloud result page (requires --cloud)")
+	flowListCmd.Flags().Int("size", 20, "Cloud page size, 1–200 (requires --cloud)")
 	flowListCmd.Flags().StringP("keyword", "k", "",
 		"Filter by name keyword")
 	flowListCmd.Flags().StringP("type", "t", "",
@@ -55,6 +58,47 @@ func runFlowList(cmd *cobra.Command, args []string) error {
 	}
 	if flowType != "" && flowType != flowTypeSource && flowType != flowTypeEvent {
 		return invalidArgument(cmd, "--type", "--type must be SourceFlow or EventFlow")
+	}
+
+	cloud, _ := cmd.Flags().GetBool("cloud")
+	if cloud {
+		if flowType != "" {
+			return invalidArgument(cmd, "--type/--source/--event", "Cloud streams do not use Enterprise Flow types")
+		}
+		page, _ := cmd.Flags().GetInt("page")
+		size, _ := cmd.Flags().GetInt("size")
+		if page < 1 {
+			return invalidArgument(cmd, "--page", "Cloud page must be at least 1")
+		}
+		if size < 1 || size > 200 {
+			return invalidArgument(cmd, "--size", "Cloud size must be between 1 and 200")
+		}
+		body, _ := json.Marshal(map[string]any{"search": keyword, "page": page, "size": size})
+		resp, err := cmdutil.DoAPI(cmd.Context(), "/openapi/v2/uns/streams/program/list", "POST", string(body), debug)
+		if err != nil {
+			return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
+		}
+		if err := cmdutil.CheckResponse(resp); err != nil {
+			return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
+		}
+		var envelope struct {
+			Code *int `json:"code"`
+			Data *struct {
+				List []json.RawMessage `json:"list"`
+			} `json:"data"`
+		}
+		if json.Unmarshal([]byte(resp), &envelope) != nil || envelope.Code == nil || (*envelope.Code != 0 && *envelope.Code != 200) || envelope.Data == nil || envelope.Data.List == nil {
+			return apiCommandError(cmd, "invalid Cloud stream list response", nil)
+		}
+		checker := notice.Start()
+		checker.Emit(resp, jsonMode, cmd.OutOrStdout(), cmd.ErrOrStderr())
+		if !jsonMode {
+			fmt.Fprintln(cmd.OutOrStdout(), resp)
+		}
+		return nil
+	}
+	if cmd.Flags().Changed("page") || cmd.Flags().Changed("size") {
+		return invalidArgument(cmd, "--page/--size", "pagination flags require --cloud")
 	}
 
 	body, _ := json.Marshal(map[string]string{
