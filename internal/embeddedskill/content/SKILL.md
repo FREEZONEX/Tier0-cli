@@ -83,7 +83,7 @@ tier0 login --no-wait --json
 Show the returned `verification_url` to the user. Then poll with:
 
 ```bash
-tier0 login --setup-code <setup_code>
+tier0 login --setup-code <setup_code> --no-key-output
 ```
 
 The polling command blocks until browser authorization completes or times out.

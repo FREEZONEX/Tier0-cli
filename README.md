@@ -196,7 +196,11 @@ it does not override the saved key or authenticate a request. Configure a key
 with `tier0 login` or `tier0 config --api-key` instead.
 Treat command arguments, shell history, and logs as potentially visible when
 passing a key directly. The existing completed `login --json` response includes
-the issued Personal Key and must be handled as secret output.
+the issued Personal Key and must be handled as secret output. For callers that
+only need the saved profile, use `tier0 login --json --no-key-output` (also
+supported with `--setup-code`). Its completion event omits `api_key`; the key
+is still saved in the profile. The flag also suppresses the prefix in text mode.
+Without the flag, the existing JSON credential delivery remains unchanged.
 
 Changing `config --base-url` to a different HTTP origin (scheme, host, or port)
 clears the saved API key. Supply `--api-key` in the same command to bind a new

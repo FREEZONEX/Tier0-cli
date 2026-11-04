@@ -25,12 +25,15 @@ func init() {
 		"Poll for an existing setup code instead of creating a new one")
 	loginCmd.Flags().String("base-url", "",
 		"Override the platform base URL")
+	loginCmd.Flags().Bool("no-key-output", false,
+		"Save the issued key without printing it or its prefix")
 }
 
 func runLogin(cmd *cobra.Command, args []string) error {
 	noWait, _ := cmd.Flags().GetBool("no-wait")
 	setupCode, _ := cmd.Flags().GetString("setup-code")
 	jsonMode, _ := cmd.Flags().GetBool("json")
+	noKeyOutput, _ := cmd.Flags().GetBool("no-key-output")
 	baseURLArg, _ := cmd.Flags().GetString("base-url")
 	stdout := cmd.OutOrStdout()
 	stderr := cmd.ErrOrStderr()
@@ -38,7 +41,7 @@ func runLogin(cmd *cobra.Command, args []string) error {
 	baseURL := cmdutil.ResolveBaseURL(baseURLArg)
 
 	if setupCode != "" {
-		return loginPoll(cmd, baseURL, setupCode, jsonMode, stdout, stderr)
+		return loginPoll(cmd, baseURL, setupCode, jsonMode, noKeyOutput, stdout, stderr)
 	}
 
 	setupCode = auth.GenerateSetupCode()
@@ -69,10 +72,10 @@ func runLogin(cmd *cobra.Command, args []string) error {
 		"\nWaiting for authorization... (polling every 5s, up to 10 minutes)",
 	)
 
-	return loginPoll(cmd, baseURL, setupCode, jsonMode, stdout, stderr)
+	return loginPoll(cmd, baseURL, setupCode, jsonMode, noKeyOutput, stdout, stderr)
 }
 
-func loginPoll(cmd *cobra.Command, baseURL, setupCode string, jsonMode bool, stdout, stderr io.Writer) error {
+func loginPoll(cmd *cobra.Command, baseURL, setupCode string, jsonMode, noKeyOutput bool, stdout, stderr io.Writer) error {
 	result, err := auth.PollSetupCheck(cmd.Context(), baseURL, setupCode, func(current, total int, done bool, pollErr error) {
 		if jsonMode || done {
 			return
@@ -104,13 +107,17 @@ func loginPoll(cmd *cobra.Command, baseURL, setupCode string, jsonMode bool, std
 		return configCommandError(cmd, "failed to save config: "+err.Error(), err)
 	}
 
-	if jsonMode {
+	if jsonMode && noKeyOutput {
+		fmt.Fprintln(stdout, `{"event":"authorization_complete"}`)
+	} else if jsonMode {
 		fmt.Fprintf(stdout, `{"event":"authorization_complete","api_key":"%s"}`+"\n", result.APIKey)
 	} else {
 		fmt.Fprintln(stdout, "\n✓ Authorization successful!")
-		fmt.Fprintf(stdout,
-			"API Key: %s... (saved)\n",
-			result.APIKey[:8])
+		if noKeyOutput {
+			fmt.Fprintln(stdout, "API Key saved.")
+		} else {
+			fmt.Fprintf(stdout, "API Key: %s... (saved)\n", result.APIKey[:min(8, len(result.APIKey))])
+		}
 		fmt.Fprintln(stdout,
 			"✓ Setup complete. You can now use tier0 api commands.",
 		)
