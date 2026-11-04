@@ -23,6 +23,7 @@ var flowListCmd = &cobra.Command{
 }
 
 func init() {
+	flowListCmd.Flags().Bool("cloud", false, "List Cloud stream programs using the native Cloud contract")
 	flowListCmd.Flags().StringP("keyword", "k", "",
 		"Filter by name keyword")
 	flowListCmd.Flags().StringP("type", "t", "",
@@ -55,6 +56,36 @@ func runFlowList(cmd *cobra.Command, args []string) error {
 	}
 	if flowType != "" && flowType != flowTypeSource && flowType != flowTypeEvent {
 		return invalidArgument(cmd, "--type", "--type must be SourceFlow or EventFlow")
+	}
+
+	cloud, _ := cmd.Flags().GetBool("cloud")
+	if cloud {
+		if flowType != "" {
+			return invalidArgument(cmd, "--type/--source/--event", "Cloud streams do not use Enterprise Flow types")
+		}
+		body, _ := json.Marshal(map[string]string{"search": keyword})
+		resp, err := cmdutil.DoAPI(cmd.Context(), "/openapi/v2/uns/streams/program/list", "POST", string(body), debug)
+		if err != nil {
+			return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
+		}
+		if err := cmdutil.CheckResponse(resp); err != nil {
+			return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
+		}
+		var envelope struct {
+			Code *int `json:"code"`
+			Data *struct {
+				List []json.RawMessage `json:"list"`
+			} `json:"data"`
+		}
+		if json.Unmarshal([]byte(resp), &envelope) != nil || envelope.Code == nil || (*envelope.Code != 0 && *envelope.Code != 200) || envelope.Data == nil || envelope.Data.List == nil {
+			return apiCommandError(cmd, "invalid Cloud stream list response", nil)
+		}
+		checker := notice.Start()
+		checker.Emit(resp, jsonMode, cmd.OutOrStdout(), cmd.ErrOrStderr())
+		if !jsonMode {
+			fmt.Fprintln(cmd.OutOrStdout(), resp)
+		}
+		return nil
 	}
 
 	body, _ := json.Marshal(map[string]string{
