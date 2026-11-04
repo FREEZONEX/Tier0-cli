@@ -174,6 +174,8 @@ Automation should branch on these fields rather than matching message text.
 
 `flow list --cloud` lists Cloud stream programs and returns the native paginated Cloud response. `--page` and `--size` select a page (size 1–200), and `--keyword` maps to the Cloud search field; Enterprise `--source`, `--event`, and `--type` are rejected in this mode because SourceFlow/EventFlow are not Cloud Stream types. Other `flow` commands still implement Enterprise Node-RED contracts; use the documented Cloud Source/Stream APIs through `tier0 api` instead of treating them as equivalent or retrying a write under another API.
 
+Use `mqtt auth create --cloud` and `mqtt auth delete --cloud` for Cloud v2 credentials; without `--cloud` these commands use Enterprise v1. When deleting a saved Cloud credential, specify `--cloud` again. The CLI does not retry a credential mutation against another API version.
+
 ## Flow Types
 
 | Type | Meaning |

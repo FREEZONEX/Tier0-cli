@@ -29,6 +29,7 @@ type mqttAuthCreateData struct {
 }
 
 func init() {
+	mqttAuthCreateCmd.Flags().Bool("cloud", false, "Use the Cloud v2 MQTT credential endpoint")
 	mqttAuthCreateCmd.Flags().String("name", "", "MQTT credential name (required)")
 	mqttAuthCreateCmd.Flags().String("description", "", "MQTT credential description")
 	mqttAuthCreateCmd.Flags().Bool("random-suffix", true, "Allow a random runtime suffix on the MQTT client ID")
@@ -46,6 +47,11 @@ func runMQTTAuthCreate(command *cobra.Command, args []string) error {
 	brokerOverride, _ := command.Flags().GetString("broker")
 	jsonMode, _ := command.Flags().GetBool("json")
 	debug, _ := command.Flags().GetBool("debug")
+	cloud, _ := command.Flags().GetBool("cloud")
+	endpoint := "/openapi/v1/mqtt-auth/create"
+	if cloud {
+		endpoint = "/openapi/v2/mqtt-auth/create"
+	}
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return invalidArgument(command, "--name", "MQTT credential name cannot be empty")
@@ -61,7 +67,7 @@ func runMQTTAuthCreate(command *cobra.Command, args []string) error {
 	if strings.TrimSpace(description) != "" {
 		payload["description"] = strings.TrimSpace(description)
 	}
-	if handled, err := writeDryRun(command, "POST", "/openapi/v1/mqtt-auth/create", payload); handled {
+	if handled, err := writeDryRun(command, "POST", endpoint, payload); handled {
 		return err
 	}
 
@@ -85,7 +91,7 @@ func runMQTTAuthCreate(command *cobra.Command, args []string) error {
 	}
 
 	checker := notice.Start()
-	resp, err := cmdutil.DoAPI(command.Context(), "/openapi/v1/mqtt-auth/create", "POST", cmdutil.JSONString(payload), debug)
+	resp, err := cmdutil.DoAPI(command.Context(), endpoint, "POST", cmdutil.JSONString(payload), debug)
 	if err != nil {
 		return cmdutil.HandleCommandError(command.ErrOrStderr(), err, jsonMode)
 	}
