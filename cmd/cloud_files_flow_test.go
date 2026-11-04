@@ -53,7 +53,7 @@ func TestCloudFlowListNativeContract(t *testing.T) {
 		}
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		if body["search"] != "machine" {
+		if body["search"] != "machine" || body["page"] != float64(2) || body["size"] != float64(3) {
 			t.Errorf("unexpected body %v", body)
 		}
 		fmt.Fprint(w, `{"code":200,"data":{"list":[],"total":0,"page":1,"size":20}}`)
@@ -62,9 +62,31 @@ func TestCloudFlowListNativeContract(t *testing.T) {
 	if err := config.SaveProfile(config.Profile{BaseURL: srv.URL, APIKey: "synthetic"}); err != nil {
 		t.Fatal(err)
 	}
-	out, _, err := executeRootForTest("flow", "list", "--cloud", "--keyword", "machine", "--json")
+	out, _, err := executeRootForTest("flow", "list", "--cloud", "--keyword", "machine", "--page", "2", "--size", "3", "--json")
 	if err != nil || !strings.Contains(out, `"list":[]`) || calls != 1 {
 		t.Fatalf("out=%s err=%v calls=%d", out, err, calls)
+	}
+}
+
+func TestCloudFlowPaginationValidation(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++ }))
+	defer srv.Close()
+	if err := config.SaveProfile(config.Profile{BaseURL: srv.URL, APIKey: "synthetic"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"flow", "list", "--cloud", "--page", "0"},
+		{"flow", "list", "--cloud", "--size", "201"},
+		{"flow", "list", "--page", "2"},
+	} {
+		if _, _, err := executeRootForTest(args...); err == nil {
+			t.Fatalf("expected error for %v", args)
+		}
+	}
+	if calls != 0 {
+		t.Fatalf("unexpected requests: %d", calls)
 	}
 }
 

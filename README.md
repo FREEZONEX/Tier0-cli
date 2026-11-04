@@ -172,7 +172,7 @@ Automation should branch on these fields rather than matching message text.
 
 `assets url --cloud --file-path <path>` uses the Cloud v2 file URL contract. Without `--cloud` the command uses Enterprise v1; neither route is automatically retried against the other. Only request URLs for files already owned by the Workspace, and treat signed URLs as secrets.
 
-`flow list --cloud` lists Cloud stream programs and returns the native paginated Cloud response. `--keyword` maps to the Cloud search field; Enterprise `--source`, `--event`, and `--type` are rejected in this mode because SourceFlow/EventFlow are not Cloud Stream types. Other `flow` commands still implement Enterprise Node-RED contracts; use the documented Cloud Source/Stream APIs through `tier0 api` instead of treating them as equivalent or retrying a write under another API.
+`flow list --cloud` lists Cloud stream programs and returns the native paginated Cloud response. `--page` and `--size` select a page (size 1–200), and `--keyword` maps to the Cloud search field; Enterprise `--source`, `--event`, and `--type` are rejected in this mode because SourceFlow/EventFlow are not Cloud Stream types. Other `flow` commands still implement Enterprise Node-RED contracts; use the documented Cloud Source/Stream APIs through `tier0 api` instead of treating them as equivalent or retrying a write under another API.
 
 ## Flow Types
 

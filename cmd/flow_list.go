@@ -24,6 +24,8 @@ var flowListCmd = &cobra.Command{
 
 func init() {
 	flowListCmd.Flags().Bool("cloud", false, "List Cloud stream programs using the native Cloud contract")
+	flowListCmd.Flags().Int("page", 1, "Cloud result page (requires --cloud)")
+	flowListCmd.Flags().Int("size", 20, "Cloud page size, 1–200 (requires --cloud)")
 	flowListCmd.Flags().StringP("keyword", "k", "",
 		"Filter by name keyword")
 	flowListCmd.Flags().StringP("type", "t", "",
@@ -63,7 +65,15 @@ func runFlowList(cmd *cobra.Command, args []string) error {
 		if flowType != "" {
 			return invalidArgument(cmd, "--type/--source/--event", "Cloud streams do not use Enterprise Flow types")
 		}
-		body, _ := json.Marshal(map[string]string{"search": keyword})
+		page, _ := cmd.Flags().GetInt("page")
+		size, _ := cmd.Flags().GetInt("size")
+		if page < 1 {
+			return invalidArgument(cmd, "--page", "Cloud page must be at least 1")
+		}
+		if size < 1 || size > 200 {
+			return invalidArgument(cmd, "--size", "Cloud size must be between 1 and 200")
+		}
+		body, _ := json.Marshal(map[string]any{"search": keyword, "page": page, "size": size})
 		resp, err := cmdutil.DoAPI(cmd.Context(), "/openapi/v2/uns/streams/program/list", "POST", string(body), debug)
 		if err != nil {
 			return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
@@ -86,6 +96,9 @@ func runFlowList(cmd *cobra.Command, args []string) error {
 			fmt.Fprintln(cmd.OutOrStdout(), resp)
 		}
 		return nil
+	}
+	if cmd.Flags().Changed("page") || cmd.Flags().Changed("size") {
+		return invalidArgument(cmd, "--page/--size", "pagination flags require --cloud")
 	}
 
 	body, _ := json.Marshal(map[string]string{
