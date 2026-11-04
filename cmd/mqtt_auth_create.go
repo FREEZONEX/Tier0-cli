@@ -86,6 +86,11 @@ func runMQTTAuthCreate(command *cobra.Command, args []string) error {
 		if err != nil {
 			return configCommandError(command, "failed to resolve MQTT credential store", err)
 		}
+		lock, err := store.Lock(saveName)
+		if err != nil {
+			return configCommandError(command, "failed to lock MQTT credential profile", err)
+		}
+		defer lock.Unlock()
 		if err := store.Prepare(saveName); err != nil {
 			return invalidArgumentCause(command, "--save", err.Error(), err)
 		}
@@ -98,10 +103,10 @@ func runMQTTAuthCreate(command *cobra.Command, args []string) error {
 	checker := notice.Start()
 	resp, err := c.DoAPI(command.Context(), endpoint, "POST", cmdutil.JSONString(payload), debug)
 	if err != nil {
-		return mqttCreateUnknown(command, "MQTT credential creation outcome is unknown")
+		return mqttMutationFailure(command, "creation", err, false)
 	}
 	if err := cmdutil.CheckResponse(resp); err != nil {
-		return mqttCreateUnknown(command, "MQTT credential creation outcome is unknown")
+		return mqttMutationFailure(command, "creation", err, true)
 	}
 	var envelope struct {
 		Code *int            `json:"code"`
@@ -171,6 +176,6 @@ func runMQTTAuthCreate(command *cobra.Command, args []string) error {
 
 func mqttCreateUnknown(command *cobra.Command, message string) error {
 	jsonMode, _ := command.Flags().GetBool("json")
-	err := errs.New(errs.CategoryAPI, 0, message).WithHint("Inspect remote credentials and the local profile before attempting another creation.", "")
+	err := errs.New(errs.CategoryAPI, 0, message).WithExecution("unknown").WithHint("Inspect remote credentials and the local profile before attempting another creation.", "")
 	return cmdutil.HandleCommandError(command.ErrOrStderr(), err, jsonMode)
 }

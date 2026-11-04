@@ -2,12 +2,14 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/FREEZONEX/Tier0-cli/internal/apierr"
 	"github.com/FREEZONEX/Tier0-cli/internal/client"
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
 	"github.com/FREEZONEX/Tier0-cli/internal/config"
@@ -140,6 +142,38 @@ func writeMQTTAuthDryRun(command *cobra.Command, endpoint string, body any) (boo
 		return true, internalCommandError(command, "failed to write dry-run output", err)
 	}
 	return true, nil
+}
+
+func mqttMutationFailure(command *cobra.Command, operation string, cause error, responseReceived bool) error {
+	category, code, status := errs.CategoryAPI, 0, 0
+	var api *apierr.APIError
+	var cli *errs.CLIError
+	if errors.As(cause, &api) {
+		category, status = api.Category(), api.HTTPStatus
+		code = api.Code
+		if code == 0 {
+			code = status
+		}
+	} else if errors.As(cause, &cli) {
+		category, code = cli.Cat, cli.Code
+	}
+	if responseReceived {
+		// CheckResponse may synthesize an APIError with HTTP status 400 for
+		// data.success=false, although the transport actually returned 2xx.
+		category, status = errs.CategoryAPI, 0
+		if api != nil && api.HTTPStatus == 0 {
+			code = api.Code
+		} else {
+			code = 0
+		}
+	}
+	message := "MQTT credential " + operation + " failed; execution outcome is unknown"
+	if status != 0 {
+		message = fmt.Sprintf("MQTT credential %s failed (HTTP %d); execution outcome is unknown", operation, status)
+	}
+	err := errs.New(category, code, message).WithHTTPStatus(status).WithExecution("unknown").WithHint("Inspect the remote credential before taking further action.", "")
+	jsonMode, _ := command.Flags().GetBool("json")
+	return cmdutil.HandleCommandError(command.ErrOrStderr(), err, jsonMode)
 }
 
 func handleMQTTTransportError(command *cobra.Command, action string, err error) error {

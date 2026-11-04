@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/gofrs/flock"
 )
 
 const fileVersion = 1
@@ -45,6 +47,30 @@ func DefaultStore() (*Store, error) {
 		return nil, fmt.Errorf("resolve user home: %w", err)
 	}
 	return &Store{Dir: filepath.Join(home, ".tier0", "mqtt")}, nil
+}
+
+// Lock serializes a profile's lifecycle across cooperating CLI processes.
+// The lock file is retained so concurrent processes always lock the same inode.
+func (s *Store) Lock(name string) (*flock.Flock, error) {
+	path, err := s.path(name)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(s.Dir, 0700); err != nil {
+		return nil, fmt.Errorf("create MQTT credential directory: %w", err)
+	}
+	if err := os.Chmod(s.Dir, 0700); err != nil {
+		return nil, fmt.Errorf("secure MQTT credential directory: %w", err)
+	}
+	lock := flock.New(path + ".lock")
+	ok, err := lock.TryLock()
+	if err != nil {
+		return nil, fmt.Errorf("lock MQTT profile: %w", err)
+	}
+	if !ok {
+		return nil, errors.New("MQTT profile is in use by another process")
+	}
+	return lock, nil
 }
 
 // ValidateName rejects profile names that could escape the credential folder.
@@ -200,6 +226,18 @@ func (s *Store) Delete(name string) error {
 		return fmt.Errorf("delete MQTT credential profile: %w", err)
 	}
 	return nil
+}
+
+// DeleteIfUnchanged must be called while holding the lifecycle lock.
+func (s *Store) DeleteIfUnchanged(name string, expected Credential) error {
+	current, err := s.Load(name)
+	if err != nil {
+		return fmt.Errorf("profile could not be rechecked: %w", err)
+	}
+	if current != expected {
+		return errors.New("profile changed while remote deletion was in progress")
+	}
+	return s.Delete(name)
 }
 
 func (s *Store) path(name string) (string, error) {

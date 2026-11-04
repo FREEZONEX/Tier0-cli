@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
-	"github.com/FREEZONEX/Tier0-cli/internal/errs"
 	"github.com/FREEZONEX/Tier0-cli/internal/highrisk"
 	"github.com/FREEZONEX/Tier0-cli/internal/mqttprofile"
 	"github.com/FREEZONEX/Tier0-cli/internal/notice"
@@ -35,6 +34,7 @@ func runMQTTAuthDelete(command *cobra.Command, args []string) error {
 	jsonMode, _ := command.Flags().GetBool("json")
 	debug, _ := command.Flags().GetBool("debug")
 	cloud, _ := command.Flags().GetBool("cloud")
+	dryRun, _ := command.Flags().GetBool("dry-run")
 	endpoint := "/openapi/v1/mqtt-auth/delete"
 	if cloud {
 		endpoint = "/openapi/v2/mqtt-auth/delete"
@@ -44,11 +44,19 @@ func runMQTTAuthDelete(command *cobra.Command, args []string) error {
 	}
 	var store *mqttprofile.Store
 	var profileOrigin string
+	var original mqttprofile.Credential
 	if strings.TrimSpace(profileName) != "" {
 		var err error
 		store, err = mqttCredentialStore()
 		if err != nil {
 			return configCommandError(command, "failed to resolve MQTT credential store", err)
+		}
+		if !dryRun {
+			lock, err := store.Lock(profileName)
+			if err != nil {
+				return configCommandError(command, "failed to lock MQTT credential profile", err)
+			}
+			defer lock.Unlock()
 		}
 		credential, err := store.Load(profileName)
 		if err != nil {
@@ -58,6 +66,7 @@ func runMQTTAuthDelete(command *cobra.Command, args []string) error {
 			return configCommandError(command, "refusing to delete an MQTT credential from a different Tier0 instance", err)
 		}
 		profileOrigin = credential.BaseURL
+		original = credential
 		switch credential.APIVersion {
 		case "v1", "v2":
 			profileCloud := credential.APIVersion == "v2"
@@ -101,12 +110,10 @@ func runMQTTAuthDelete(command *cobra.Command, args []string) error {
 	checker := notice.Start()
 	resp, err := c.DoAPI(command.Context(), endpoint, "POST", cmdutil.JSONString(payload), debug)
 	if err != nil {
-		unknown := errs.New(errs.CategoryAPI, 0, "MQTT credential deletion outcome is unknown; local profile was retained").WithHint("Inspect the remote credential before taking further action.", "")
-		return cmdutil.HandleCommandError(command.ErrOrStderr(), unknown, jsonMode)
+		return mqttMutationFailure(command, "deletion", err, false)
 	}
 	if err := cmdutil.CheckResponse(resp); err != nil {
-		unknown := errs.New(errs.CategoryAPI, 0, "MQTT credential deletion outcome is unknown; local profile was retained").WithHint("Inspect the remote credential before taking further action.", "")
-		return cmdutil.HandleCommandError(command.ErrOrStderr(), unknown, jsonMode)
+		return mqttMutationFailure(command, "deletion", err, true)
 	}
 	var result struct {
 		Code *int `json:"code"`
@@ -115,11 +122,11 @@ func runMQTTAuthDelete(command *cobra.Command, args []string) error {
 		} `json:"data"`
 	}
 	if json.Unmarshal([]byte(resp), &result) != nil || result.Code == nil || (*result.Code != 0 && *result.Code != 200) || result.Data.Success == nil || !*result.Data.Success {
-		return internalCommandError(command, "MQTT deletion was not confirmed; local profile was retained", nil)
+		return mqttMutationFailure(command, "deletion", nil, true)
 	}
 	if store != nil {
-		if err := store.Delete(profileName); err != nil {
-			return configCommandError(command, "remote credential was deleted but the local profile could not be removed", err)
+		if err := store.DeleteIfUnchanged(profileName, original); err != nil {
+			return configCommandError(command, "remote credential was deleted but the local profile changed or could not be removed; inspect it before proceeding", err)
 		}
 	}
 	stdout := command.OutOrStdout()

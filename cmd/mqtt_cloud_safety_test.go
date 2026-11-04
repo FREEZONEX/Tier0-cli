@@ -11,7 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
 	"github.com/FREEZONEX/Tier0-cli/internal/config"
+	"github.com/FREEZONEX/Tier0-cli/internal/errs"
 	"github.com/FREEZONEX/Tier0-cli/internal/mqttprofile"
 )
 
@@ -70,6 +72,130 @@ func TestCloudMQTTProfileBindsVersionAndProtectsPassword(t *testing.T) {
 	}
 }
 
+func TestMQTTMutationHTTPErrorKeepsCategoryAndUnknownExecution(t *testing.T) {
+	for _, tc := range []struct {
+		status   int
+		category errs.Category
+		exit     int
+	}{
+		{400, errs.CategoryValidation, 2}, {401, errs.CategoryAuthentication, 3}, {403, errs.CategoryAuthorization, 3}, {503, errs.CategoryAPI, 1},
+	} {
+		for _, action := range []string{"create", "delete"} {
+			t.Run(fmt.Sprintf("%s-%d", action, tc.status), func(t *testing.T) {
+				t.Setenv("HOME", t.TempDir())
+				t.Setenv("TIER0_BASE_URL", "")
+				calls := 0
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					calls++
+					w.WriteHeader(tc.status)
+					fmt.Fprintf(w, `{"code":%d,"msg":"denied"}`, tc.status)
+				}))
+				defer srv.Close()
+				if err := config.SaveProfile(config.Profile{BaseURL: srv.URL, APIKey: "synthetic"}); err != nil {
+					t.Fatal(err)
+				}
+				args := []string{"mqtt", "auth", action, "--cloud", "--json"}
+				if action == "create" {
+					args = append(args, "--name", "agent")
+				} else {
+					args = append(args, "--id", "42", "--yes")
+				}
+				_, stderr, err := executeRootForTest(args...)
+				var result struct {
+					Error struct {
+						Type       errs.Category `json:"type"`
+						Code       int           `json:"code"`
+						HTTPStatus int           `json:"http_status"`
+						Execution  string        `json:"execution"`
+						Retryable  bool          `json:"retryable"`
+					} `json:"error"`
+				}
+				if err == nil || json.Unmarshal([]byte(stderr), &result) != nil || calls != 1 || result.Error.Type != tc.category || result.Error.Code != tc.status || result.Error.HTTPStatus != tc.status || result.Error.Execution != "unknown" || result.Error.Retryable || errs.ExitCode(cmdutil.CategoryOf(err)) != tc.exit {
+					t.Fatalf("calls=%d err=%v result=%s", calls, err, stderr)
+				}
+			})
+		}
+	}
+}
+
+func TestMQTTDeleteBusinessFailureDoesNotInventHTTPStatus(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("TIER0_BASE_URL", "")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, `{"code":200,"data":{"success":false}}`) }))
+	defer srv.Close()
+	if err := config.SaveProfile(config.Profile{BaseURL: srv.URL, APIKey: "synthetic"}); err != nil {
+		t.Fatal(err)
+	}
+	_, stderr, err := executeRootForTest("mqtt", "auth", "delete", "--cloud", "--id", "42", "--yes", "--json")
+	var response struct {
+		Error struct {
+			HTTPStatus int           `json:"http_status"`
+			Code       int           `json:"code"`
+			Type       errs.Category `json:"type"`
+			Execution  string        `json:"execution"`
+			Retryable  bool          `json:"retryable"`
+		} `json:"error"`
+	}
+	if err == nil || json.Unmarshal([]byte(stderr), &response) != nil || response.Error.HTTPStatus != 0 || response.Error.Code != 0 || response.Error.Type != errs.CategoryAPI || response.Error.Execution != "unknown" || response.Error.Retryable {
+		t.Fatalf("err=%v stderr=%s", err, stderr)
+	}
+}
+
+func TestMQTTDeleteDoesNotRemoveReplacedProfile(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("TIER0_BASE_URL", "")
+	store, _ := mqttprofile.DefaultStore()
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Simulate a non-cooperating older client replacing the file while the request is in flight.
+		if err := store.Delete("agent"); err != nil {
+			t.Error(err)
+		}
+		if err := store.Save("agent", mqttprofile.Credential{ID: 99, BaseURL: server.URL, APIVersion: "v2", Broker: "tcp://localhost:1883", ClientID: "new", Username: "u", Password: "new-secret"}); err != nil {
+			t.Error(err)
+		}
+		fmt.Fprint(w, `{"code":200,"data":{"success":true}}`)
+	}))
+	defer server.Close()
+	if err := config.SaveProfile(config.Profile{BaseURL: server.URL, APIKey: "synthetic"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save("agent", mqttprofile.Credential{ID: 42, BaseURL: server.URL, APIVersion: "v2", Broker: "tcp://localhost:1883", ClientID: "old", Username: "u", Password: "old-secret"}); err != nil {
+		t.Fatal(err)
+	}
+	_, stderr, err := executeRootForTest("mqtt", "auth", "delete", "--credential", "agent", "--yes", "--json")
+	profile, loadErr := store.Load("agent")
+	if err == nil || loadErr != nil || profile.ID != 99 || !strings.Contains(stderr, "profile changed") {
+		t.Fatalf("err=%v load=%v id=%d stderr=%s", err, loadErr, profile.ID, stderr)
+	}
+}
+
+func TestMQTTDeleteDryRunDoesNotWriteToProfileDirectory(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("TIER0_BASE_URL", "")
+	if err := config.SaveProfile(config.Profile{BaseURL: "https://example.test", APIKey: "synthetic"}); err != nil {
+		t.Fatal(err)
+	}
+	store, _ := mqttprofile.DefaultStore()
+	if err := store.Save("agent", mqttprofile.Credential{ID: 42, BaseURL: "https://example.test", APIVersion: "v2", Broker: "tcp://localhost:1883", ClientID: "id", Username: "u", Password: "p"}); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(store.Dir, 0500); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { os.Chmod(store.Dir, 0700) })
+	}
+	_, stderr, err := executeRootForTest("mqtt", "auth", "delete", "--credential", "agent", "--dry-run", "--json")
+	if err != nil {
+		t.Fatalf("preview: %v %s", err, stderr)
+	}
+	entries, err := os.ReadDir(store.Dir)
+	if err != nil || len(entries) != 1 || entries[0].Name() != "agent.json" {
+		t.Fatalf("preview changed directory: %v %v", entries, err)
+	}
+}
+
 func TestMQTTCreateUncertainResponsesAndLocalSaveFailure(t *testing.T) {
 	for _, tc := range []struct {
 		name, response string
@@ -113,7 +239,7 @@ func TestMQTTCreateUncertainResponsesAndLocalSaveFailure(t *testing.T) {
 					Hint      string `json:"hint"`
 				} `json:"error"`
 			}
-			if err == nil || calls != 1 || json.Unmarshal([]byte(stderr), &response) != nil || response.Error.Retryable || !strings.Contains(response.Error.Hint, "Inspect remote") || strings.Contains(out+stderr, "secret-value") {
+			if err == nil || calls != 1 || json.Unmarshal([]byte(stderr), &response) != nil || response.Error.Retryable || !strings.Contains(response.Error.Hint, "Inspect ") || strings.Contains(out+stderr, "secret-value") {
 				t.Fatalf("err=%v calls=%d output=%s", err, calls, stderr)
 			}
 			if tc.collide {

@@ -3,6 +3,7 @@ package mqttprofile
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -48,6 +49,38 @@ func TestStoreRoundTripAndDelete(t *testing.T) {
 	if _, err := store.Load("demo"); err == nil {
 		t.Fatal("expected deleted profile to be missing")
 	}
+}
+
+func TestLifecycleLockAcrossProcesses(t *testing.T) {
+	if dir := os.Getenv("TIER0_TEST_MQTT_LOCK_DIR"); dir != "" {
+		store := &Store{Dir: dir}
+		lock, err := store.Lock("agent")
+		if err == nil {
+			lock.Unlock()
+			t.Fatal("concurrent process acquired locked profile")
+		}
+		return
+	}
+	dir := t.TempDir()
+	store := &Store{Dir: dir}
+	lock, err := store.Lock("agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestLifecycleLockAcrossProcesses$")
+	cmd.Env = append(os.Environ(), "TIER0_TEST_MQTT_LOCK_DIR="+dir)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("lock subprocess: %v %s", err, output)
+	}
+	if err := lock.Unlock(); err != nil {
+		t.Fatal(err)
+	}
+	next, err := store.Lock("agent")
+	if err != nil {
+		t.Fatalf("lock not released: %v", err)
+	}
+	next.Unlock()
 }
 
 func TestPrepareRejectsUnsupportedSafeInstall(t *testing.T) {
