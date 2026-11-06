@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
@@ -52,15 +53,36 @@ func runConfig(cmd *cobra.Command, args []string) error {
 			return configCommandError(cmd, "failed to load config: "+err.Error(), err)
 		}
 		if setBaseURL != "" {
-			profile.BaseURL = strings.TrimRight(setBaseURL, "/")
+			setBaseURL = strings.TrimRight(strings.TrimSpace(setBaseURL), "/")
+			if _, err := config.Origin(setBaseURL); err != nil {
+				return invalidArgument(cmd, "--base-url", "expected an HTTP(S) URL without credentials, query, or fragment")
+			}
+			if !config.SameOrigin(profile.BaseURL, setBaseURL) && setAPIKey == "" && profile.APIKey != "" {
+				profile.APIKey = ""
+				if !jsonMode {
+					fmt.Fprintln(stdout, "Saved API key cleared because the base URL origin changed.")
+				}
+			}
+			profile.BaseURL = setBaseURL
 		}
 		if setAPIKey != "" {
 			profile.APIKey = strings.TrimSpace(setAPIKey)
+			if profile.APIKey == "" {
+				return invalidArgument(cmd, "--api-key", "API key must not be blank")
+			}
+			if profile.BaseURL == "" {
+				// Bind a newly supplied key, never an existing unbound key. An
+				// environment override is ambiguous: ask for an explicit origin.
+				if strings.TrimSpace(os.Getenv("TIER0_BASE_URL")) != "" {
+					return invalidArgument(cmd, "--base-url", "specify the target base URL when configuring a key with TIER0_BASE_URL set")
+				}
+				profile.BaseURL = cmdutil.DefaultBaseURL
+			}
 		}
 		if setLang != "" {
 			profile.Lang = "en"
 		}
-		if err := config.SaveProfile(profile); err != nil {
+		if err := config.ReplaceProfile(profile); err != nil {
 			return configCommandError(cmd, "failed to save config: "+err.Error(), err)
 		}
 		if jsonMode {
@@ -74,6 +96,9 @@ func runConfig(cmd *cobra.Command, args []string) error {
 		}
 		if setAPIKey != "" {
 			fmt.Fprintf(stdout, "✓ API Key set (%s...)\n", profile.APIKey[:min(8, len(profile.APIKey))])
+			if setBaseURL == "" {
+				fmt.Fprintf(stdout, "  Bound to BaseURL: %s\n", profile.BaseURL)
+			}
 		}
 		if setLang != "" {
 			fmt.Fprintln(stdout, "✓ Language set to: en")

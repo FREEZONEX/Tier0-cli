@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,17 +23,44 @@ type Client struct {
 	client  *http.Client
 }
 
+// BaseURL is the origin bound to this client and its credential.
+func (c *Client) BaseURL() string { return c.baseURL }
+
 // New creates an API client.
 func New(baseURL, apiKey string) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		apiKey:  apiKey,
-		client:  &http.Client{Timeout: 30 * time.Second},
+		client:  &http.Client{Timeout: 30 * time.Second, CheckRedirect: CheckCredentialRedirect},
 	}
+}
+
+// ErrCredentialRedirect avoids including a potentially signed redirect URL in errors.
+var ErrCredentialRedirect = errors.New("refusing to redirect API key to another origin")
+
+// CheckCredentialRedirect prevents an API key from reaching another origin.
+func CheckCredentialRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	if len(via) > 0 && via[0].Header.Get("x-api-key") != "" &&
+		(!strings.EqualFold(req.URL.Scheme, via[0].URL.Scheme) || !strings.EqualFold(req.URL.Host, via[0].URL.Host)) {
+		return ErrCredentialRedirect
+	}
+	return nil
 }
 
 // DoAPI calls an API endpoint.
 func (c *Client) DoAPI(ctx context.Context, endpoint, method, body string, debug bool) (string, error) {
+	return c.doAPI(ctx, endpoint, method, body, debug, false)
+}
+
+// DoAPIWithoutRedirect never replays a mutation at a redirect target.
+func (c *Client) DoAPIWithoutRedirect(ctx context.Context, endpoint, method, body string, debug bool) (string, error) {
+	return c.doAPI(ctx, endpoint, method, body, debug, true)
+}
+
+func (c *Client) doAPI(ctx context.Context, endpoint, method, body string, debug, noRedirect bool) (string, error) {
 	if strings.TrimSpace(method) == "" {
 		return "", errs.New(errs.CategoryInternal, 0, "request method is empty").
 			WithSubtype(errs.SubtypeFailedPrecondition)
@@ -72,21 +100,43 @@ func (c *Client) DoAPI(ctx context.Context, endpoint, method, body string, debug
 		fmt.Fprintf(os.Stderr, "[debug] ----------------------------------\n")
 	}
 
-	resp, err := c.client.Do(req)
+	httpClient := c.client
+	if noRedirect {
+		copy := *c.client
+		copy.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		httpClient = &copy
+	}
+	resp, err := httpClient.Do(req)
 	if err != nil {
+		if errors.Is(err, ErrCredentialRedirect) {
+			err = ErrCredentialRedirect
+		}
 		return "", errs.New(errs.CategoryNetwork, 0, "request failed: "+err.Error()).
 			WithHint("Check network connectivity and the base URL.", "tier0 config").
 			WithRetryable()
 	}
 	defer resp.Body.Close()
+	if noRedirect && resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return "", apierr.New(resp.StatusCode, "redirect refused for file mutation")
+	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", errs.New(errs.CategoryNetwork, 0, "failed to read response: "+err.Error()).WithRetryable()
+		// HTTP status is already known even if the body is incomplete. Do not
+		// include a partial body: credential responses can contain secrets.
+		if resp.StatusCode >= 400 {
+			return "", apierr.New(resp.StatusCode, "HTTP error response body could not be read")
+		}
+		return "", errs.New(errs.CategoryNetwork, 0, "failed to read response: "+err.Error()).WithHTTPStatus(resp.StatusCode).WithRetryable()
 	}
 
 	if debug {
 		debugBody := redactDebugPayload(string(respBody))
+		// Credential creation responses can contain one-time passwords even if
+		// the response is truncated and cannot be parsed as JSON.
+		if (strings.HasSuffix(endpoint, "/mqtt-auth/create") || strings.Contains(endpoint, "/assets/files")) && !json.Valid(respBody) {
+			debugBody = "<debug body redacted>"
+		}
 		fmt.Fprintf(os.Stderr, "[debug] ---------- HTTP Response ---------\n")
 		fmt.Fprintf(os.Stderr, "[debug] Status: %d %s\n", resp.StatusCode, resp.Status)
 		if len(debugBody) > 4096 {
@@ -139,6 +189,8 @@ func sensitiveDebugKey(key string) bool {
 	return strings.Contains(normalized, "password") ||
 		strings.Contains(normalized, "secret") ||
 		strings.Contains(normalized, "token") ||
+		strings.Contains(normalized, "signature") ||
+		normalized == "postfields" || normalized == "posturl" || normalized == "fileurl" ||
 		normalized == "apikey" || normalized == "authorization" || normalized == "privatekey"
 }
 

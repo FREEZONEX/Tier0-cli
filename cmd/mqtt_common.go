@@ -2,12 +2,17 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/FREEZONEX/Tier0-cli/internal/apierr"
+	"github.com/FREEZONEX/Tier0-cli/internal/client"
 	"github.com/FREEZONEX/Tier0-cli/internal/cmdutil"
+	"github.com/FREEZONEX/Tier0-cli/internal/config"
 	"github.com/FREEZONEX/Tier0-cli/internal/errs"
 	"github.com/FREEZONEX/Tier0-cli/internal/mqttprofile"
 	"github.com/FREEZONEX/Tier0-cli/internal/mqtttransport"
@@ -98,12 +103,77 @@ func resolveMQTTConnection(command *cobra.Command, autoReconnect bool) (mqtttran
 }
 
 func validateMQTTProfileBaseURL(profileName, profileBaseURL string) error {
-	currentBaseURL := strings.TrimRight(cmdutil.ResolveBaseURL(""), "/")
-	profileBaseURL = strings.TrimRight(strings.TrimSpace(profileBaseURL), "/")
-	if profileBaseURL != "" && !strings.EqualFold(currentBaseURL, profileBaseURL) {
-		return fmt.Errorf("MQTT credential profile %q belongs to %s, but the CLI is configured for %s", profileName, profileBaseURL, currentBaseURL)
+	profile, err := config.LoadProfile()
+	if err != nil {
+		return fmt.Errorf("load configured API origin: %w", err)
+	}
+	currentBaseURL := profile.BaseURL
+	if currentBaseURL == "" {
+		currentBaseURL = cmdutil.ResolveBaseURL("")
+	}
+	return validateMQTTProfileOrigin(profileName, profileBaseURL, currentBaseURL)
+}
+
+func validateMQTTProfileOrigin(profileName, profileBaseURL, currentBaseURL string) error {
+	a, errA := url.Parse(profileBaseURL)
+	b, errB := url.Parse(currentBaseURL)
+	if errA != nil || errB != nil || a == nil || b == nil || a.User != nil || b.User != nil || a.RawQuery != "" || b.RawQuery != "" || a.Fragment != "" || b.Fragment != "" || !config.SameOrigin(profileBaseURL, currentBaseURL) || strings.TrimRight(a.EscapedPath(), "/") != strings.TrimRight(b.EscapedPath(), "/") {
+		return fmt.Errorf("MQTT credential profile %q is not bound to the configured API origin", profileName)
 	}
 	return nil
+}
+
+func writeMQTTAuthDryRun(command *cobra.Command, endpoint string, body any) (bool, error) {
+	dryRun, _ := command.Flags().GetBool("dry-run")
+	if !dryRun {
+		return false, nil
+	}
+	profile, err := config.LoadProfile()
+	if err != nil {
+		return true, configCommandError(command, "failed to load configured API origin", err)
+	}
+	base := profile.BaseURL
+	if base == "" {
+		base = cmdutil.ResolveBaseURL("")
+	}
+	preview := cmdutil.RequestPreview{Method: "POST", URL: strings.TrimRight(base, "/") + endpoint, Body: body}
+	jsonMode, _ := command.Flags().GetBool("json")
+	if err := cmdutil.WriteDryRun(command.OutOrStdout(), preview, jsonMode); err != nil {
+		return true, internalCommandError(command, "failed to write dry-run output", err)
+	}
+	return true, nil
+}
+
+func mqttMutationFailure(command *cobra.Command, operation string, cause error, responseReceived bool) error {
+	category, code, status := errs.CategoryAPI, 0, 0
+	var api *apierr.APIError
+	var cli *errs.CLIError
+	if errors.As(cause, &api) {
+		category, status = api.Category(), api.HTTPStatus
+		code = api.Code
+		if code == 0 {
+			code = status
+		}
+	} else if errors.As(cause, &cli) {
+		category, code, status = cli.Cat, cli.Code, cli.HTTPStatus
+	}
+	if responseReceived {
+		// CheckResponse may synthesize an APIError with HTTP status 400 for
+		// data.success=false, although the transport actually returned 2xx.
+		category, status = errs.CategoryAPI, 0
+		if api != nil && api.HTTPStatus == 0 {
+			code = api.Code
+		} else {
+			code = 0
+		}
+	}
+	message := "MQTT credential " + operation + " failed; execution outcome is unknown"
+	if status != 0 {
+		message = fmt.Sprintf("MQTT credential %s failed (HTTP %d); execution outcome is unknown", operation, status)
+	}
+	err := errs.New(category, code, message).WithHTTPStatus(status).WithExecution("unknown").WithHint("Inspect the remote credential before taking further action.", "")
+	jsonMode, _ := command.Flags().GetBool("json")
+	return cmdutil.HandleCommandError(command.ErrOrStderr(), err, jsonMode)
 }
 
 func handleMQTTTransportError(command *cobra.Command, action string, err error) error {
@@ -117,11 +187,15 @@ func handleMQTTTransportError(command *cobra.Command, action string, err error) 
 	return handleCLIError(command, cliErr)
 }
 
-func discoverMQTTBroker(command *cobra.Command, override string, debug bool) (string, error) {
+func discoverMQTTBroker(command *cobra.Command, c *client.Client, override string, cloud, debug bool) (string, error) {
 	if strings.TrimSpace(override) != "" {
 		return mqtttransport.NormalizeBroker(override)
 	}
-	resp, err := cmdutil.DoAPI(command.Context(), "/openapi/v1/info", "POST", "{}", debug)
+	endpoint := "/openapi/v1/info"
+	if cloud {
+		endpoint = "/openapi/v2/info"
+	}
+	resp, err := c.DoAPI(command.Context(), endpoint, "POST", "{}", debug)
 	if err != nil {
 		return "", err
 	}

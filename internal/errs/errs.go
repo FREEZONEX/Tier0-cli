@@ -96,6 +96,8 @@ type CLIError struct {
 	HintText    string
 	HintCmd     string
 	IsRetryable bool
+	HTTPStatus  int
+	Execution   string
 	Cause       error
 }
 
@@ -172,6 +174,9 @@ func (e *CLIError) WithRetryable() *CLIError {
 	return e
 }
 
+func (e *CLIError) WithHTTPStatus(status int) *CLIError      { e.HTTPStatus = status; return e }
+func (e *CLIError) WithExecution(execution string) *CLIError { e.Execution = execution; return e }
+
 // ── JSON envelope ────────────────────────────────────────────────────────────
 
 // Envelope is the unified JSON error structure written to stderr on failure.
@@ -192,6 +197,8 @@ type ErrorDetail struct {
 	Hint        string   `json:"hint,omitempty"`
 	HintCommand string   `json:"hint_command,omitempty"`
 	Retryable   bool     `json:"retryable,omitempty"`
+	HTTPStatus  int      `json:"http_status,omitempty"`
+	Execution   string   `json:"execution,omitempty"`
 }
 
 // Format renders an Envelope as a single-line JSON string.
@@ -213,6 +220,8 @@ func BuildEnvelope(e *CLIError) Envelope {
 			Hint:        e.HintText,
 			HintCommand: e.HintCmd,
 			Retryable:   e.IsRetryable,
+			HTTPStatus:  e.HTTPStatus,
+			Execution:   e.Execution,
 		},
 	}
 }

@@ -19,20 +19,44 @@ import (
 
 // DoAPI loads the profile, creates a client, and calls the API.
 func DoAPI(ctx context.Context, endpoint, method, body string, debug bool) (string, error) {
+	c, err := configuredClient()
+	if err != nil {
+		return "", err
+	}
+	return c.DoAPI(ctx, endpoint, method, body, debug)
+}
+
+// DoWhoami inspects the configured key using the supported identity endpoint.
+func DoWhoami(ctx context.Context, debug bool) (string, error) {
+	c, err := configuredClient()
+	if err != nil {
+		return "", err
+	}
+	return c.Whoami(ctx, debug)
+}
+
+// NewConfiguredClient snapshots the saved origin and key for a multi-request operation.
+func NewConfiguredClient() (*client.Client, error) {
+	return configuredClient()
+}
+
+func configuredClient() (*client.Client, error) {
 	profile, err := config.LoadProfile()
 	if err != nil {
-		return "", errs.New(errs.CategoryConfig, 0,
+		return nil, errs.New(errs.CategoryConfig, 0,
 			"failed to load config: "+err.Error()).
 			WithHint("Run tier0 config to set up the CLI.", "tier0 config")
 	}
 	if profile.APIKey == "" {
-		return "", errs.New(errs.CategoryAuthentication, 401,
+		return nil, errs.New(errs.CategoryAuthentication, 401,
 			"API Key not configured.").
 			WithHint("Authenticate first.", "tier0 login")
 	}
-	c := client.New(profile.BaseURL, profile.APIKey)
-	return c.DoAPI(ctx, endpoint, method, body, debug)
+	return client.New(profile.BaseURL, profile.APIKey), nil
 }
+
+// DefaultBaseURL is the SaaS target when no origin is explicitly configured.
+const DefaultBaseURL = "https://tier0.dev"
 
 // ResolveBaseURL resolves the effective base URL from arg, env, or config.
 func ResolveBaseURL(baseURLArg string) string {
@@ -46,7 +70,7 @@ func ResolveBaseURL(baseURLArg string) string {
 	if profile.BaseURL != "" {
 		return strings.TrimRight(profile.BaseURL, "/")
 	}
-	return "https://tier0.dev"
+	return DefaultBaseURL
 }
 
 // CategoryOf returns the errs.Category for any error the CLI may produce.

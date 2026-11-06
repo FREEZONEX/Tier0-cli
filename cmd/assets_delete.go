@@ -22,6 +22,7 @@ Examples:
 }
 
 func init() {
+	assetsDeleteCmd.Flags().Bool("cloud", false, "Use Cloud v2 file endpoint")
 	assetsDeleteCmd.Flags().String("file-path", "", "File path returned by upload")
 	assetsDeleteCmd.Flags().BoolP("yes", "y", false,
 		"Confirm high-risk operation (required)")
@@ -30,7 +31,7 @@ func init() {
 }
 
 type assetsDeleteResponse struct {
-	Code int    `json:"code"`
+	Code *int   `json:"code"`
 	Msg  string `json:"msg"`
 	Data struct {
 		Deleted bool `json:"deleted"`
@@ -42,9 +43,14 @@ func runAssetsDelete(cmd *cobra.Command, args []string) error {
 	debug, _ := cmd.Flags().GetBool("debug")
 	filePath, _ := cmd.Flags().GetString("file-path")
 	confirmed, _ := cmd.Flags().GetBool("yes")
+	cloud, _ := cmd.Flags().GetBool("cloud")
+	endpoint := "/openapi/v1/assets/files/delete"
+	if cloud {
+		endpoint = "/openapi/v2/assets/files/delete"
+	}
 
 	body := map[string]any{"filePath": filePath}
-	if handled, err := writeDryRun(cmd, "POST", "/openapi/v1/assets/files/delete", body); handled {
+	if handled, err := writeDryRun(cmd, "POST", endpoint, body); handled {
 		return err
 	}
 	if err := highrisk.Guard(confirmed, "assets delete",
@@ -53,19 +59,43 @@ func runAssetsDelete(cmd *cobra.Command, args []string) error {
 	}
 	bodyJSON, _ := json.Marshal(body)
 
-	resp, err := cmdutil.DoAPI(cmd.Context(), "/openapi/v1/assets/files/delete", "POST", string(bodyJSON), debug)
+	apiClient, err := cmdutil.NewConfiguredClient()
 	if err != nil {
+		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
+	}
+	var resp string
+	if cloud {
+		resp, err = apiClient.DoAPIWithoutRedirect(cmd.Context(), endpoint, "POST", string(bodyJSON), debug)
+	} else {
+		resp, err = apiClient.DoAPI(cmd.Context(), endpoint, "POST", string(bodyJSON), debug)
+	}
+	if err != nil {
+		if cloud {
+			return fileMutationUnknown(cmd, "delete", err)
+		}
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), err, jsonMode)
 	}
 
 	var delResp assetsDeleteResponse
 	if err := json.Unmarshal([]byte(resp), &delResp); err != nil {
+		if cloud {
+			return fileMutationUnknown(cmd, "delete", nil)
+		}
 		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), fmt.Errorf("parse delete response: %w", err), jsonMode)
 	}
-	if delResp.Code != 0 && delResp.Code != 200 {
-		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), apierr.NewBusiness(delResp.Code, resp), jsonMode)
+	if cloud && delResp.Code == nil {
+		return fileMutationUnknown(cmd, "delete", nil)
+	}
+	if delResp.Code != nil && *delResp.Code != 0 && *delResp.Code != 200 {
+		if cloud {
+			return fileMutationUnknown(cmd, "delete", apierr.NewBusiness(*delResp.Code, resp))
+		}
+		return cmdutil.HandleCommandError(cmd.ErrOrStderr(), apierr.NewBusiness(*delResp.Code, resp), jsonMode)
 	}
 	if !delResp.Data.Deleted {
+		if cloud {
+			return fileMutationUnknown(cmd, "delete", nil)
+		}
 		return apiCommandError(cmd, "the server did not delete the requested file", nil)
 	}
 

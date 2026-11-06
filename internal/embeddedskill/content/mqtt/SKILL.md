@@ -39,7 +39,9 @@ tier0 mqtt auth create --name agent --save agent \
 ```
 
 `--save` writes a user-only local profile under Tier0's config directory. The
-profile is tied to the configured Tier0 base URL. Private deployments can pass
+profile is tied to the configured Tier0 base URL and API version. Use `--cloud`
+for Cloud creation. Older profiles without an API version require an explicit
+`--cloud` or `--cloud=false` when deleting. Private deployments can pass
 `--broker`, and MQTT commands can pass `--ca-file`.
 
 Preview deletion, show the credential ID and impact to the user, wait for

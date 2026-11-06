@@ -67,6 +67,20 @@ Direct API key configuration:
 tier0 config --api-key sk-per-xxxxxx
 ```
 
+With no saved base URL, explicitly setting a key binds it to the default
+`https://tier0.dev`. If `TIER0_BASE_URL` is set, provide `--base-url` explicitly
+with the key to select its origin. An already saved base URL takes precedence.
+
+The browser login issues a Personal Key. An already issued Personal, Service,
+or App Key can be configured explicitly; the server determines its identity
+and effective permissions. `tier0 auth whoami` and `tier0 doctor` use the v2
+identity endpoint, falling back to v1 only when v2 returns HTTP 404. `doctor`
+does the same for the info endpoint. Ordinary API requests carrying a key
+reject cross-origin redirects; file downloads can follow cross-origin HTTPS
+redirects without forwarding credentials, subject to the limitations below. App-bound
+operations may need additional server-verified authorization that this CLI
+does not provide; configuring an App Key does not bypass those checks.
+
 Private deployment:
 
 ```bash
@@ -150,6 +164,20 @@ With `--json`, command validation failures are written to stderr with stable
 
 Automation should branch on these fields rather than matching message text.
 
+## Browsing Cloud and Enterprise namespaces
+
+`uns browse` first uses the Enterprise v1 browse contract. If that endpoint returns HTTP 404, it queries the Cloud v2 namespace endpoint. Cloud returns its native paginated `data.results` response, rather than Enterprise's `data.tree`; its IDs, kinds, and metadata have Cloud semantics. Cloud paths identify directories by exact name, including literal `.` and `..`, and the result lists their children. Use `--cloud --parent-id <id>` to list a known directory by its opaque Cloud ID; it cannot be combined with `--path`. Path resolution uses Cloud substring search and checks every matching page for an exact, unique directory name. It starts at 200 entries per page and restarts with smaller pages on Cloud `RESPONSE_TOO_LARGE`. The default limit is 1000 pages per segment per attempt; `--path-max-pages` with `--cloud` can set 1–10000. It fails explicitly when the limit prevents a complete uniqueness check. Cloud pagination is per request and is not an atomic snapshot across pages. `--cloud` selects v2 directly; `--page` and `--size` require `--cloud` (size 1–200). Cloud does not support the v1 `--max-depth` values other than 1, `--include-metadata`, or `--include-leaf-value` through this command; requests using them fail explicitly. Cloud App Keys can be denied by the server's namespace policy. Other UNS commands may still target v1 and require a compatible server.
+
+## Cloud files and stream programs
+
+`assets url --cloud --file-path <path>` uses the Cloud v2 file URL contract. Without `--cloud` the command uses Enterprise v1; neither route is automatically retried against the other. Only request URLs for files already owned by the Workspace, and treat signed URLs as secrets.
+
+`flow list --cloud` lists Cloud stream programs and returns the native paginated Cloud response. `--page` and `--size` select a page (size 1–200), and `--keyword` maps to the Cloud search field; Enterprise `--source`, `--event`, and `--type` are rejected in this mode because SourceFlow/EventFlow are not Cloud Stream types. Other `flow` commands still implement Enterprise Node-RED contracts; use the documented Cloud Source/Stream APIs through `tier0 api` instead of treating them as equivalent or retrying a write under another API.
+
+Use `mqtt auth create --cloud` for Cloud v2 credentials; without `--cloud`, creation uses Enterprise v1. Saved profiles record their API version and deletion selects the matching endpoint. Older profiles lack this information: specify `--cloud` or `--cloud=false` explicitly when deleting them. The CLI does not retry a credential mutation against another API version. With `--save --json`, the password is stored in the local profile and omitted from stdout.
+
+The profile lifecycle lock coordinates processes using this CLI version. Older CLI versions or other programs can change profile files without honoring it; a credential comparison before removal detects replacements already made, but cannot eliminate an external change between the comparison and removal.
+
 ## Flow Types
 
 | Type | Meaning |
@@ -162,12 +190,48 @@ Automation should branch on these fields rather than matching message text.
 Configuration is stored at `~/.tier0/config.json`. MQTT credentials saved with
 `mqtt auth create --save` use individual user-only files under `~/.tier0/mqtt/`.
 
-Priority:
+OpenAPI commands, `auth whoami`, and `assets download` use the API key and base
+URL saved in the configuration file. `TIER0_API_KEY` is not supported: setting
+it does not override the saved key or authenticate a request. Configure a key
+with `tier0 login` or `tier0 config --api-key` instead.
+Treat command arguments, shell history, and logs as potentially visible when
+passing a key directly. The existing completed `login --json` response includes
+the issued Personal Key and must be handled as secret output. For callers that
+only need the saved profile, use `tier0 login --json --no-key-output` (also
+supported with `--setup-code`). Its completion event omits `api_key`; the key
+is still saved in the profile. The flag also suppresses the prefix in text mode.
+Without the flag, the existing JSON credential delivery remains unchanged.
 
-1. Command flags such as `--base-url`
-2. Environment variables such as `TIER0_BASE_URL`
-3. Config file
-4. Default `https://tier0.dev`
+Changing `config --base-url` to a different HTTP origin (scheme, host, or port)
+clears the saved API key. Supply `--api-key` in the same command to bind a new
+key explicitly; changes within the same origin retain the key.
+
+`assets download` uses the v2 endpoint, falling back to v1 only when the gateway
+returns HTTP 404 before a redirect. It follows public or presigned cross-origin
+storage redirects only over HTTPS, without forwarding request headers or the API
+key. HTTPS-to-HTTP downgrades and more than five redirects are rejected. Treat
+presigned URLs as secrets. The gateway must return a 302 redirect. The current
+gateway contract supplies no proof that a redirect or its response is actually
+object storage: an intermediary or SSO service can return a login page as a
+successful download. The CLI cannot distinguish that response from an HTML file.
+
+Downloads written with `-o` use a temporary file in the destination directory.
+The final destination must be absent or a regular file, never a symbolic link or
+special file. On Unix, replacement preserves ordinary rwx mode bits, but not
+ownership, ACLs, extended attributes, special bits, or other hard links. On
+Windows, existing destinations are refused to avoid silently replacing their
+ACLs; choose a new destination. Creating a new destination requires filesystem
+support for hard links. Concurrent changes to a destination are not supported.
+Only completed transfers are installed; stdout downloads are streamed directly.
+
+Base URL resolution differs by command. `login` uses its `--base-url` flag,
+then `TIER0_BASE_URL`, the saved base URL, and finally `https://tier0.dev`.
+Dry-run previews resolve `TIER0_BASE_URL` before the saved URL, while actual
+OpenAPI requests use the saved URL. Do not use a dry-run URL as evidence of an
+actual request target when they differ. When a key is saved, `doctor` uses its
+saved base URL and refuses cross-origin redirects; a key without a saved base
+URL cannot be used for diagnostics. Without a saved key, `doctor` can use
+`TIER0_BASE_URL` for an unauthenticated connectivity check.
 
 Tier0 CLI output is English-only. The legacy `--lang en` flag is accepted for compatibility.
 
@@ -175,8 +239,7 @@ Tier0 CLI output is English-only. The legacy `--lang en` flag is accepted for co
 
 | Variable | Meaning |
 | --- | --- |
-| `TIER0_BASE_URL` | Override platform base URL |
-| `TIER0_API_KEY` | Override API key |
+| `TIER0_BASE_URL` | Override the base URL for login, most dry-run previews, MQTT profile selection when no API origin is saved, and doctor connectivity checks without a saved key; authenticated OpenAPI requests and MQTT credential previews use the saved API origin |
 | `TIER0_MQTT_BROKER` | MQTT broker used without a saved credential profile |
 | `TIER0_MQTT_CLIENT_ID` | MQTT client ID used without a saved credential profile |
 | `TIER0_MQTT_USERNAME` | MQTT username used without a saved credential profile |
@@ -221,7 +284,7 @@ go test ./...
 Skill example validation scans the sibling `Tier0-skill/` repository, extracts `tier0 ...` examples, and validates command paths and flags against the Cobra command tree.
 
 ```bash
-go test ./cmd -run TestSkillExamples
+go test ./cmd -run '^TestSkillExampleCommands$'
 ```
 
 Refresh the compiled baseline from the latest `Tier0-skill/main` commit:

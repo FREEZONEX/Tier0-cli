@@ -65,8 +65,9 @@ operation:
 tier0 auth whoami --json
 ```
 
-If it succeeds, reuse the existing login and do not prompt again. If it returns
-an authentication/config error, start the browser device flow below.
+If it succeeds, reuse the configured key. If it returns an error, distinguish
+an absent configuration from a rejected or unavailable key before taking action;
+do not silently replace a configured Service or App Key with a Personal Key.
 
 Preferred when an API key is already available:
 
@@ -74,7 +75,7 @@ Preferred when an API key is already available:
 tier0 config --api-key <api-key>
 ```
 
-Browser device flow:
+Browser device flow creates a Personal Key:
 
 ```bash
 tier0 login --no-wait --json
@@ -83,7 +84,7 @@ tier0 login --no-wait --json
 Show the returned `verification_url` to the user. Then poll with:
 
 ```bash
-tier0 login --setup-code <setup_code>
+tier0 login --setup-code <setup_code> --no-key-output
 ```
 
 The polling command blocks until browser authorization completes or times out.
